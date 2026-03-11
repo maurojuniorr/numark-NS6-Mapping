@@ -208,7 +208,12 @@ midi.sendSysexMsg(NumarkNS6.QueryStatusMessage, NumarkNS6.QueryStatusMessage.len
             engine.makeConnection(g, "track_loaded", function() { 
                 NumarkNS6.updatePlayCueLEDs(dIdx, mChan); 
             });
-
+            // 🔥 O ATALHO: Atualiza os LEDs assim que o botão Cue é tocado
+            engine.makeConnection(g, "cue_default", function() {
+                if (NumarkNS6.Decks[dIdx]) {
+                    NumarkNS6.updatePlayCueLEDs(dIdx, mChan);
+                }
+            });
             // O pulso da batida agora chama a função centralizada
             engine.makeConnection(g, "beat_active", function() {
                 NumarkNS6.updateSyncLED(dIdx, mChan);
@@ -235,7 +240,7 @@ NumarkNS6.topContainer = function(channel) {
     var theContainer = this;
 var dChan = channel; // Captura o canal para as funções internas
 
-    this.btnEffect1 = new components.Button({
+    this.hotCue1 = new components.Button({
         midi: [0x90+channel, 0x2B, 0xB0+channel, 0x0B],
         shift: function() {
             this.group="[EffectRack1_EffectUnit1]";
@@ -250,7 +255,7 @@ var dChan = channel; // Captura o canal para as funções internas
             this.outKey = "hotcue_1_enabled";
         },
     });
-    this.btnEffect2 = new components.Button({
+    this.hotCue2 = new components.Button({
         midi: [0x90+channel, 0x14, 0xB0+channel, 0x0C],
         shift: function() {
             this.group="[EffectRack1_EffectUnit2]";
@@ -265,7 +270,7 @@ var dChan = channel; // Captura o canal para as funções internas
             this.outKey = "hotcue_2_enabled";
         },
     });
-    this.btnSample3 = new components.Button({
+    this.hotCue3 = new components.Button({
         midi: [0x90+channel, 0x15, 0xB0+channel, 0x0D],
         shift: function() {
             this.type=components.Button.prototype.types.toggle;
@@ -278,7 +283,7 @@ var dChan = channel; // Captura o canal para as funções internas
             this.outKey = "hotcue_3_enabled";
         },
     });
-    this.btnSample4 = new components.Button({
+    this.hotCue4 = new components.Button({
         midi: [0x90+channel, 0x16, 0xB0+channel, 0x0E],
         outKey: "loop_enabled",
         shift: function() {
@@ -289,6 +294,19 @@ var dChan = channel; // Captura o canal para as funções internas
             this.type=components.Button.prototype.types.push;
             this.inKey = "hotcue_4_activate";
             this.outKey = "hotcue_4_enabled";
+        },
+    });
+    this.hotCue5 = new components.Button({
+        midi: [0x90+channel, 0x17, 0xB0+channel, 0x0F],
+        outKey: "loop_enabled",
+        shift: function() {
+            this.inKey = "hotcue_5_clear";
+            this.outKey = "hotcue_5_enabled";
+        },
+        unshift: function() {
+            this.type=components.Button.prototype.types.push;
+            this.inKey = "hotcue_5_activate";
+            this.outKey = "hotcue_5_enabled";
         },
     });
 
@@ -398,10 +416,11 @@ var dChan = channel; // Captura o canal para as funções internas
             theContainer.hotcueButtons[i].send(0);
         }
         // turn all remaining LEDS of the topContainer
-        theContainer.btnEffect1.send(0);
-        theContainer.btnEffect2.send(0);
-        theContainer.btnSample3.send(0);
-        theContainer.btnSample4.send(0);
+        theContainer.hotCue1.send(0);
+        theContainer.hotCue2.send(0);
+        theContainer.hotCue3.send(0);
+        theContainer.hotCue4.send(0);
+        theContainer.hotCue5.send(0);
     };
 
     if (NumarkNS6.resetHotCuePageOnTrackLoad) {
