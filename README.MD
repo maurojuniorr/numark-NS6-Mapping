@@ -12,7 +12,7 @@ Este projeto visa preencher uma lacuna para a comunidade: a criação de um mape
 
 ---
 
-## ✅ O que já está Perfeito (Alpha Stable)
+## ✅ O que já está funcional (Alpha Stable)
 * **High-Res Jogs (14-bits):** Implementação de precisão cirúrgica com processamento atômico (MSB/LSB) para evitar retrocessos e imprecisões.
 * **Nudge de Alta Performance:** Ajuste fino de batida totalmente funcional e calibrado.
 * **Smart LED Engine:** Motor de LEDs customizado para Play, Cue e Sync, respeitando estados de *Blink* e sincronia com o *Beat* (via `beat_active`).
@@ -28,12 +28,6 @@ Estamos trabalhando para estabilizar os seguintes pontos:
 * **Efeitos (FX):** Botões e knobs de efeito ainda não mapeados.
 * **Looping:** Funções de Loop In, Loop Out e Reloop.
 * **Funções Extras:** Reverse, Censor e outros botões secundários.
-
----
-
-## 🔍 Detalhes de Hardware
-* **Diferenciação de Modelo:** Este mapeamento é destinado à **NS6 original**. (A menção a "v2" em versões anteriores referia-se apenas ao versionamento do script de desenvolvimento).
-* **Telas:** A NS6 não possui telas integradas, focando toda a performance na reatividade dos controles e LEDs.
 
 ---
 
