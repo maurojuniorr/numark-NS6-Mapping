@@ -577,8 +577,11 @@ NumarkNS6.Deck = function(channel) {
     this.rateRangeEntry = 0;
     var theDeck = this;
     NumarkNS6.lastJogRingValue = [0, 0, 0, 0, 0];
+    // Variáveis de estado para a "Embreagem" do Prato
+    this.gridSlipMode = false;
+    this.gridAdjustMode = false;
+    this.skipMode = false; // 🔥 NOVA: Embreagem do botão Skip
 
-        
     // --- VARIÁVEIS DE ESTADO ---
     this.scratchMode = true; 
     this.isSearching = false;
@@ -671,6 +674,48 @@ NumarkNS6.Deck = function(channel) {
         },
     });
 
+    // =======================================================
+    // BOTÕES DE BEAT GRID (Baseado nas notas 1F e 20)
+    // =======================================================
+
+    // Botão 1: Set / Clear (Nota 1F) - Shift = Atrasar (Esquerda)
+    this.gridSetClearInput = function(channel, control, value, status, group) {
+        if (value > 0) { 
+            if (theDeck.shiftButton.state) {
+                // Aperta o botão na tela
+                engine.setValue(group, "beats_translate_earlier", 1);
+                // "Solta" o botão na tela 100ms depois (Faz piscar!)
+                engine.beginTimer(100, function() { engine.setValue(group, "beats_translate_earlier", 0); }, true);
+            } else {
+                // SET: Crava a batida
+                engine.setValue(group, "beats_translate_curpos", 1);
+                engine.beginTimer(100, function() { engine.setValue(group, "beats_translate_curpos", 0); }, true);
+            }
+        }
+    };
+
+    // Botão 2: Slip / Adjust (Nota 20) - Shift = Adiantar (Direita)
+    this.gridSlipAdjustInput = function(channel, control, value, status, group) {
+        var isPressed = (value > 0);
+
+        if (isPressed) {
+            if (theDeck.shiftButton.state) {
+                // Aperta o botão na tela
+                engine.setValue(group, "beats_translate_later", 1);
+                // "Solta" o botão na tela 100ms depois (Faz piscar!)
+                engine.beginTimer(100, function() { engine.setValue(group, "beats_translate_later", 0); }, true);
+                
+                theDeck.gridSlipMode = false; 
+            } else {
+                // SLIP Normal: Liga a "Embreagem" do Prato
+                theDeck.gridSlipMode = true;
+            }
+        } else {
+            // Soltou a tecla física, desengata o prato.
+            theDeck.gridSlipMode = false;
+        }
+    };
+
     // NOTE: THE ORIENTATION BUTTONS BEHAVE REALLY WEIRD AND THE FOLLOWING IS REALLY CONFUSING BUT WORKS!
     this.orientationButtonLeft = new components.Button({
         midi: [0x90, 0x32+channel*2, 0xB0, 0x42+channel*2],
@@ -692,6 +737,19 @@ NumarkNS6.Deck = function(channel) {
             if (value===0) { theDeck.orientationButtonRight.ignoreNextOff = true; }
         },
     });
+
+    // Botão SKIP (Embreagem do Prato para Beatjump)
+    // Altere a nota 1D no XML se a física do seu controle for diferente.
+    this.skipButtonInput = function(channel, control, value, status, group) {
+        // Liga se apertou (>0), desliga se soltou (===0)
+        theDeck.skipMode = (value > 0);
+        
+        // Segurança: Zera o acumulador ao soltar para não pular sozinho depois
+        if (value === 0) {
+            theDeck.skipAccumulator = 0;
+        }
+    };
+    
     this.orientationButtonRight = new components.Button({
         midi: [0x90, 0x33+channel*2, 0xB0, 0x43+channel*2],
         key: "orientation",
@@ -890,6 +948,56 @@ NumarkNS6.shutdown = function() {
     // midi.sendSysexMsg(NumarkNS6.ShutoffSequence,NumarkNS6.ShutoffSequence.length);
 };
 
+
+
+// NumarkNS6.jogMove14bit = function(channel, control, value, status, group) {
+//     var deckNum = script.deckFromGroup(group);
+//     if (control === 0x00) NumarkNS6.jogMSB[deckNum] = value;
+//     if (control === 0x20) NumarkNS6.jogLSB[deckNum] = value;
+//     if (control !== 0x20) return;
+
+//     var fullValue = (NumarkNS6.jogMSB[deckNum] << 7) | NumarkNS6.jogLSB[deckNum];
+//     if (NumarkNS6.lastJogValue[deckNum] === undefined) NumarkNS6.lastJogValue[deckNum] = fullValue;
+//     var delta = fullValue - NumarkNS6.lastJogValue[deckNum];
+//     NumarkNS6.lastJogValue[deckNum] = fullValue;
+    
+//     if (delta > 8192) delta -= 16384;
+//     else if (delta < -8192) delta += 16384;
+
+//     var deck = NumarkNS6.Decks[deckNum];
+//     if (!deck) return;
+
+//     // 🔥 1. MODO SLIP (Arrastar o Grid inteiro)
+//     if (deck.gridSlipMode) {
+//         var slipCmd = (delta > 0) ? "beats_translate_later" : "beats_translate_earlier";
+        
+//         // A MÁGICA DO PULSO: Envia 1 (Aperta) e 0 (Solta) imediatamente para o Mixxx processar o próximo tracinho
+//         engine.setValue(group, slipCmd, 1);
+//         engine.setValue(group, slipCmd, 0);
+        
+//         return; // Retorna aqui! Garante que o disco não faça Scratch/Pitch.
+//     }
+
+//     // 🔥 2. MODO ADJUST (Esticar ou Encolher o Grid)
+//     if (deck.gridAdjustMode) {
+//         // Se gira para frente (delta positivo), o grid expande. Para trás, encolhe.
+//         var adjustCmd = (delta > 0) ? "beats_adjust_slower" : "beats_adjust_faster";
+        
+//         engine.setValue(group, adjustCmd, 1);
+//         engine.setValue(group, adjustCmd, 0);
+        
+//         return; // Retorna aqui!
+//     }
+
+//     // 3. COMPORTAMENTO PADRÃO DO JOG (Scratch e Pitch Bend)
+//     if (engine.isScratching(deckNum)) {
+//         engine.scratchTick(deckNum, delta);
+//     } else {
+//         engine.setValue(group, "jog", delta / 15);
+//     }
+// };
+
+// --- MOTOR PRINCIPAL DO PRATO (JOG WHEEL) ---
 NumarkNS6.jogMove14bit = function(channel, control, value, status, group) {
     var deckNum = script.deckFromGroup(group);
     if (control === 0x00) NumarkNS6.jogMSB[deckNum] = value;
@@ -904,6 +1012,48 @@ NumarkNS6.jogMove14bit = function(channel, control, value, status, group) {
     if (delta > 8192) delta -= 16384;
     else if (delta < -8192) delta += 16384;
 
+    var deck = NumarkNS6.Decks[deckNum];
+    if (!deck) return;
+
+    // 🔥 1. MODO SKIP (Beatjump via Prato)
+    if (deck.skipMode) {
+        // Cria um acumulador de rotação no objeto deck (se não existir)
+        if (deck.skipAccumulator === undefined) deck.skipAccumulator = 0;
+        
+        // Soma o movimento (delta)
+        deck.skipAccumulator += delta;
+        
+        // Limite de sensibilidade (Quanto tem que girar para pular 1 batida)
+        // Valores normais de resolução de prato: 20 a 50 ticks. Ajuste este número se ficar muito rápido/lento!
+        var skipSensitivity = 30; 
+
+        if (deck.skipAccumulator > skipSensitivity) {
+            engine.setValue(group, "beatjump_1_forward", 1); // Pula 1 batida pra frente
+            deck.skipAccumulator = 0; // Zera a conta
+        } else if (deck.skipAccumulator < -skipSensitivity) {
+            engine.setValue(group, "beatjump_1_backward", 1); // Pula 1 batida pra trás
+            deck.skipAccumulator = 0; // Zera a conta
+        }
+        return; // Retorna! Não dá scratch nem afeta o grid.
+    }
+
+    // 2. MODO SLIP (Arrastar o Grid inteiro)
+    if (deck.gridSlipMode) {
+        var slipCmd = (delta > 0) ? "beats_translate_later" : "beats_translate_earlier";
+        engine.setValue(group, slipCmd, 1);
+        engine.setValue(group, slipCmd, 0);
+        return; 
+    }
+
+    // 3. MODO ADJUST (Esticar ou Encolher o Grid)
+    if (deck.gridAdjustMode) {
+        var adjustCmd = (delta > 0) ? "beats_adjust_slower" : "beats_adjust_faster";
+        engine.setValue(group, adjustCmd, 1);
+        engine.setValue(group, adjustCmd, 0);
+        return; 
+    }
+
+    // 4. COMPORTAMENTO PADRÃO DO JOG (Scratch e Pitch Bend)
     if (engine.isScratching(deckNum)) {
         engine.scratchTick(deckNum, delta);
     } else {
