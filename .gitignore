@@ -1,0 +1,15 @@
+# Node.js
+node_modules/
+npm-debug.log
+
+# JavaScript
+dist/
+build/
+*.log
+
+# XML
+*.xml~
+*.bak
+*.tmp
+# macOS
+.DS_Store
