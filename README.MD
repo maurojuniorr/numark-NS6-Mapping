@@ -1,8 +1,4 @@
-Professor, o projeto atingiu a marca de **Alpha v1.0**! Com a parte do Mixer estabilizada, o mapeamento já cobre o "fluxo vital" de qualquer DJ. O botão que você mencionou para escutar no fone é tecnicamente chamado de **PFL (Pre-Fader Listen)** ou simplesmente **Cue/Monitoramento**.
 
-Aqui está o `README.md` atualizado e reorganizado para refletir essa maturidade do projeto.
-
----
 
 # Numark NS6 Mapping for Mixxx 🎧
 
