@@ -14,27 +14,7 @@
       <file functionprefix="NumarkNS6" filename="Numark-NS6-scripts.js"/>
     </scriptfiles>
     <controls>
-    <control>
-        <group>[Channel1]</group>
-        <key>playposition</key>
-        <description>Barra de Busca Deck 1</description>
-        <status>0xB1</status>
-        <midino>0x02</midino>
-        <options>
-            <normal/>
-        </options>
-    </control>
     
-      <control>
-          <group>[Channel2]</group>
-          <key>playposition</key>
-          <description>Barra de Busca Deck 2</description>
-          <status>0xB2</status>
-          <midino>0x02</midino>
-          <options>
-              <normal/>
-          </options>
-      </control>
 <control>
         <group>[Channel1]</group>
         <key>NumarkNS6.Decks[1].gridSetClearInput</key>
@@ -758,9 +738,16 @@
           <status>0x94</status> <midino>0x1C</midino>
           <options><Script-Binding/></options>
       </control>
-      
+    
 
       <!-- nav encoder -->
+      <!-- <control>
+          <group>[Master]</group>
+          <status>0x90</status> 
+          <midino>0x01</midino> 
+          <key>NumarkNS6.viewButtonInput</key>
+
+      </control> -->
       <control>
         <group>[Library]</group>
         <key>NumarkNS6.Mixer.navigationEncoderTick.input</key>
@@ -1920,7 +1907,7 @@
       </control>
       <control>
         <group>[Channel1]</group>
-        <key>NumarkNS6.Decks[1].tapButton.input</key>
+        <key>NumarkNS6.tapButtonInput</key>
         <status>0x91</status>
         <midino>0x1E</midino>
         <options>
@@ -1929,7 +1916,7 @@
       </control>
       <control>
         <group>[Channel2]</group>
-        <key>NumarkNS6.Decks[2].tapButton.input</key>
+        <key>NumarkNS6.tapButtonInput</key>
         <status>0x92</status>
         <midino>0x1E</midino>
         <options>
@@ -1938,7 +1925,7 @@
       </control>
       <control>
         <group>[Channel3]</group>
-        <key>NumarkNS6.Decks[3].tapButton.input</key>
+        <key>NumarkNS6.tapButtonInput</key>
         <status>0x93</status>
         <midino>0x1E</midino>
         <options>
@@ -1947,7 +1934,7 @@
       </control>
       <control>
         <group>[Channel4]</group>
-        <key>NumarkNS6.Decks[4].tapButton.input</key>
+        <key>NumarkNS6.tapButtonInput</key>
         <status>0x94</status>
         <midino>0x1E</midino>
         <options>
@@ -1956,7 +1943,7 @@
       </control>
       <control>
         <group>[Channel1]</group>
-        <key>NumarkNS6.Decks[1].tapButton.input</key>
+        <key>NumarkNS6.tapButtonInput</key>
         <status>0x81</status>
         <midino>0x1E</midino>
         <options>
@@ -1965,7 +1952,7 @@
       </control>
       <control>
         <group>[Channel2]</group>
-        <key>NumarkNS6.Decks[2].tapButton.input</key>
+        <key>NumarkNS6.tapButtonInput</key>
         <status>0x82</status>
         <midino>0x1E</midino>
         <options>
@@ -1974,7 +1961,7 @@
       </control>
       <control>
         <group>[Channel3]</group>
-        <key>NumarkNS6.Decks[3].tapButton.input</key>
+        <key>NumarkNS6.tapButtonInput</key>
         <status>0x83</status>
         <midino>0x1E</midino>
         <options>
@@ -1983,7 +1970,7 @@
       </control>
       <control>
         <group>[Channel4]</group>
-        <key>NumarkNS6.Decks[4].tapButton.input</key>
+        <key>NumarkNS6.tapButtonInput</key>
         <status>0x84</status>
         <midino>0x1E</midino>
         <options>
@@ -2971,5 +2958,6 @@
         </options>
       </control>
     </controls>
+  
   </controller>
 </MixxxControllerPreset>
