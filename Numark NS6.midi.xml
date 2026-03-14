@@ -949,7 +949,6 @@
         <midino>0x58</midino>
         <options><script-binding/></options>
       </control>
-      
       <!-- End Fx -->
       <control>
         <group>[Skin]</group>
@@ -1036,6 +1035,151 @@
         </options>
       </control>
       <!-- Crossfader side Assignment -->
+
+      <control>
+          <group>[Channel1]</group>
+          <key>NumarkNS6.Decks[1].hotcuesContainer.hotCue1.input</key>
+          <status>0x91</status>
+          <midino>0x13</midino>
+          <options><script-binding/></options>
+      </control>
+      <control>
+          <group>[Channel1]</group>
+          <key>NumarkNS6.Decks[1].hotcuesContainer.hotCue2.input</key>
+          <status>0x91</status>
+          <midino>0x14</midino>
+          <options><script-binding/></options>
+      </control>
+      <control>
+          <group>[Channel1]</group>
+          <key>NumarkNS6.Decks[1].hotcuesContainer.hotCue3.input</key>
+          <status>0x91</status>
+          <midino>0x15</midino>
+          <options><script-binding/></options>
+      </control>
+      <control>
+          <group>[Channel1]</group>
+          <key>NumarkNS6.Decks[1].hotcuesContainer.hotCue4.input</key>
+          <status>0x91</status>
+          <midino>0x16</midino>
+          <options><script-binding/></options>
+      </control>
+      <control>
+          <group>[Channel1]</group>
+          <key>NumarkNS6.Decks[1].hotcuesContainer.hotCue5.input</key>
+          <status>0x91</status>
+          <midino>0x17</midino>
+          <options><script-binding/></options>
+      </control>
+
+      <control>
+          <group>[Channel2]</group>
+          <key>NumarkNS6.Decks[2].hotcuesContainer.hotCue1.input</key>
+          <status>0x92</status>
+          <midino>0x13</midino>
+          <options><script-binding/></options>
+      </control>
+      <control>
+          <group>[Channel2]</group>
+          <key>NumarkNS6.Decks[2].hotcuesContainer.hotCue2.input</key>
+          <status>0x92</status>
+          <midino>0x14</midino>
+          <options><script-binding/></options>
+      </control>
+      <control>
+          <group>[Channel2]</group>
+          <key>NumarkNS6.Decks[2].hotcuesContainer.hotCue3.input</key>
+          <status>0x92</status>
+          <midino>0x15</midino>
+          <options><script-binding/></options>
+      </control>
+      <control>
+          <group>[Channel2]</group>
+          <key>NumarkNS6.Decks[2].hotcuesContainer.hotCue4.input</key>
+          <status>0x92</status>
+          <midino>0x16</midino>
+          <options><script-binding/></options>
+      </control>
+      <control>
+          <group>[Channel2]</group>
+          <key>NumarkNS6.Decks[2].hotcuesContainer.hotCue5.input</key>
+          <status>0x92</status>
+          <midino>0x17</midino>
+          <options><script-binding/></options>
+      </control>
+
+      <control>
+          <group>[Channel3]</group>
+          <key>NumarkNS6.Decks[3].hotcuesContainer.hotCue1.input</key>
+          <status>0x93</status>
+          <midino>0x13</midino>
+          <options><script-binding/></options>
+      </control>
+      <control>
+          <group>[Channel3]</group>
+          <key>NumarkNS6.Decks[3].hotcuesContainer.hotCue2.input</key>
+          <status>0x93</status>
+          <midino>0x14</midino>
+          <options><script-binding/></options>
+      </control>
+      <control>
+          <group>[Channel3]</group>
+          <key>NumarkNS6.Decks[3].hotcuesContainer.hotCue3.input</key>
+          <status>0x93</status>
+          <midino>0x15</midino>
+          <options><script-binding/></options>
+      </control>
+      <control>
+          <group>[Channel3]</group>
+          <key>NumarkNS6.Decks[3].hotcuesContainer.hotCue4.input</key>
+          <status>0x93</status>
+          <midino>0x16</midino>
+          <options><script-binding/></options>
+      </control>
+      <control>
+          <group>[Channel3]</group>
+          <key>NumarkNS6.Decks[3].hotcuesContainer.hotCue5.input</key>
+          <status>0x93</status>
+          <midino>0x17</midino>
+          <options><script-binding/></options>
+      </control>
+
+      <control>
+          <group>[Channel4]</group>
+          <key>NumarkNS6.Decks[4].hotcuesContainer.hotCue1.input</key>
+          <status>0x94</status>
+          <midino>0x13</midino>
+          <options><script-binding/></options>
+      </control>
+      <control>
+          <group>[Channel4]</group>
+          <key>NumarkNS6.Decks[4].hotcuesContainer.hotCue2.input</key>
+          <status>0x94</status>
+          <midino>0x14</midino>
+          <options><script-binding/></options>
+      </control>
+      <control>
+          <group>[Channel4]</group>
+          <key>NumarkNS6.Decks[4].hotcuesContainer.hotCue3.input</key>
+          <status>0x94</status>
+          <midino>0x15</midino>
+          <options><script-binding/></options>
+      </control>
+      <control>
+          <group>[Channel4]</group>
+          <key>NumarkNS6.Decks[4].hotcuesContainer.hotCue4.input</key>
+          <status>0x94</status>
+          <midino>0x16</midino>
+          <options><script-binding/></options>
+      </control>
+      <control>
+          <group>[Channel4]</group>
+          <key>NumarkNS6.Decks[4].hotcuesContainer.hotCue5.input</key>
+          <status>0x94</status>
+          <midino>0x17</midino>
+          <options><script-binding/></options>
+      </control>
+
       <control>
         <group>[Channel1]</group>
         <key>NumarkNS6.Decks[1].orientationButtonLeft.input</key>
