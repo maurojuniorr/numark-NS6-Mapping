@@ -497,6 +497,67 @@ NumarkNS6.HotcuesContainer = function (channel) {
     };
 };
 NumarkNS6.HotcuesContainer.prototype = new components.ComponentContainer();
+// ==========================================================
+// 🚀 FADER START INTELIGENTE (PADRÃO FIFA)
+// ==========================================================
+NumarkNS6.faderStartLeft = false;
+NumarkNS6.faderStartRight = false;
+NumarkNS6.prevCrossfader = 0;
+
+// Liga/Desliga o Fader Start ESQUERDO e o LED
+NumarkNS6.toggleFaderStartLeft = function(channel, control, value, status, group) {
+    if (value > 0) {
+        NumarkNS6.faderStartLeft = !NumarkNS6.faderStartLeft;
+        midi.sendShortMsg(0x90, 0x02, NumarkNS6.faderStartLeft ? 0x7F : 0x00);
+    }
+};
+
+// Liga/Desliga o Fader Start DIREITO e o LED
+NumarkNS6.toggleFaderStartRight = function(channel, control, value, status, group) {
+    if (value > 0) {
+        NumarkNS6.faderStartRight = !NumarkNS6.faderStartRight;
+        midi.sendShortMsg(0x90, 0x03, NumarkNS6.faderStartRight ? 0x7F : 0x00);
+    }
+};
+
+// Vigiando o movimento do Crossfader do Mixxx
+engine.makeConnection("[Master]", "crossfader", function(value) {
+    // ⬅️ FADER START ESQUERDO: Se abrir o fader
+    if (NumarkNS6.faderStartLeft && value > -0.95 && NumarkNS6.prevCrossfader <= -0.95) {
+        for (var i = 1; i <= 4; i++) {
+            if (engine.getValue("[Channel" + i + "]", "orientation") === 0) { 
+                engine.setValue("[Channel" + i + "]", "play", 1);
+            }
+        }
+    } 
+    // ⬅️ STOP/CUE ESQUERDO: Se fechar o fader totalmente
+    else if (NumarkNS6.faderStartLeft && value <= -0.95 && NumarkNS6.prevCrossfader > -0.95) {
+        for (var i = 1; i <= 4; i++) {
+            if (engine.getValue("[Channel" + i + "]", "orientation") === 0) {
+                engine.setValue("[Channel" + i + "]", "cue_gotoandstop", 1);
+            }
+        }
+    }
+
+    // ➡️ FADER START DIREITO: Se abrir o fader
+    if (NumarkNS6.faderStartRight && value < 0.95 && NumarkNS6.prevCrossfader >= 0.95) {
+        for (var i = 1; i <= 4; i++) {
+            if (engine.getValue("[Channel" + i + "]", "orientation") === 2) { 
+                engine.setValue("[Channel" + i + "]", "play", 1);
+            }
+        }
+    } 
+    // ➡️ STOP/CUE DIREITO: Se fechar o fader totalmente
+    else if (NumarkNS6.faderStartRight && value >= 0.95 && NumarkNS6.prevCrossfader < 0.95) {
+        for (var i = 1; i <= 4; i++) {
+            if (engine.getValue("[Channel" + i + "]", "orientation") === 2) {
+                engine.setValue("[Channel" + i + "]", "cue_gotoandstop", 1);
+            }
+        }
+    }
+
+    NumarkNS6.prevCrossfader = value;
+});
 
 NumarkNS6.Deck = function(channel) {
     components.Deck.call(this, channel);

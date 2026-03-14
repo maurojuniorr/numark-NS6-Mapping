@@ -2335,6 +2335,25 @@
       </control>
       <!-- Faders -->
       <control>
+          <group>[Master]</group>
+          <key>NumarkNS6.toggleFaderStartLeft</key>
+          <status>0x90</status>
+          <midino>0x02</midino>
+          <options>
+              <script-binding/>
+          </options>
+      </control>
+
+      <control>
+          <group>[Master]</group>
+          <key>NumarkNS6.toggleFaderStartRight</key>
+          <status>0x90</status>
+          <midino>0x03</midino>
+          <options>
+              <script-binding/>
+          </options>
+      </control>
+      <control>
         <group>[Master]</group>
         <key>crossfader</key>
         <status>0xB0</status>
