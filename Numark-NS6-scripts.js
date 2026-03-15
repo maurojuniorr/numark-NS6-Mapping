@@ -219,6 +219,7 @@ NumarkNS6.init = function () {
             engine.makeConnection(g, "play", function () { NumarkNS6.updatePlayCueLEDs(dIdx, mChan); });
             engine.makeConnection(g, "sync_enabled", function () { NumarkNS6.updateSyncLED(dIdx, mChan); });
             engine.makeConnection(g, "quantize", function () { NumarkNS6.updateSyncLED(dIdx, mChan); });
+            engine.makeConnection(g, "beat_active", function () { NumarkNS6.updateSyncLED(dIdx, mChan); });
             engine.makeConnection(g, "track_loaded", function (v) { 
                 if (v > 0) { 
                     NumarkNS6.updatePlayCueLEDs(dIdx, mChan); 
@@ -234,8 +235,8 @@ NumarkNS6.init = function () {
         })(i);
     }
 
-    engine.makeConnection("[Channel1]", "rate", NumarkNS6.updateBpmMeter);
-    engine.makeConnection("[Channel2]", "rate", NumarkNS6.updateBpmMeter);
+    engine.makeConnection("[Channel1]", "bpm", NumarkNS6.updateBpmMeter);
+    engine.makeConnection("[Channel2]", "bpm", NumarkNS6.updateBpmMeter);
     
     Object.keys(NumarkNS6.scratchXFader).forEach(function (control) {
         var connectionObject = engine.makeConnection("[Mixer Profile]", control, NumarkNS6.CrossfaderChangeCallback.bind(this));
