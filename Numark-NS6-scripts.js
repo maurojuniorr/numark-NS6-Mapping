@@ -523,7 +523,30 @@ NumarkNS6.Deck = function(channel) {
     });
 
    
-    this.playButton = new components.Button({ midi: [0x90 + channel, 0x11, 0xB0 + channel, 0x09], group: groupName, output: function() {}, input: function (ch, ctrl, val, st, grp) { if (val > 0) script.toggleControl(grp, "play"); } });
+    this.playButton = new components.Button({ 
+        midi: [0x90 + channel, 0x11, 0xB0 + channel, 0x09], 
+        group: groupName, 
+        output: function() {}, 
+        input: function (ch, ctrl, val, st, grp) { 
+            if (val > 0) {
+                // 🎯 O TIRO DE MISERICÓRDIA:
+                // Se você acabou de girar o prato, vamos abortar o timer e o scratch AGORA.
+                var deck = NumarkNS6.Decks[theDeck.deckNum];
+                if (deck.scrubTimer !== undefined && deck.scrubTimer !== 0) {
+                    engine.stopTimer(deck.scrubTimer);
+                    deck.scrubTimer = 0;
+                }
+                if (deck.isAutoScrubbing) {
+                    engine.scratchDisable(theDeck.deckNum);
+                    deck.isAutoScrubbing = false;
+                }
+
+                // Agora sim, solta o som sem nenhuma "embreagem" presa!
+                script.toggleControl(grp, "play"); 
+            }
+        } 
+    });
+    
     this.cueButton = new components.Button({ 
         midi: [0x90 + channel, 0x10, 0xB0 + channel, 0x08], group: groupName, output: function() {}, 
         input: function (ch, ctrl, val, st, grp) {
@@ -651,8 +674,6 @@ NumarkNS6.Deck = function(channel) {
 
 // Variável para você afinar o "Peso" do prato com a música pausada.
 // 1 = Normal. 4 a 6 = Peso e precisão de CDJ-2000.
-NumarkNS6.cdjScrubWeight = 10; 
-
 NumarkNS6.jogMove14bit = function(ch, ctrl, val, st, grp) {
     var deckNum = script.deckFromGroup(grp);
     if (ctrl === 0x00) NumarkNS6.jogMSB[deckNum] = val;
@@ -669,6 +690,7 @@ NumarkNS6.jogMove14bit = function(ch, ctrl, val, st, grp) {
     var deck = NumarkNS6.Decks[deckNum];
     if (!deck) return;
     
+    // 1. MODO SKIP (Beatjump) - Já estava bom
     if (deck.skipMode) {
         if (deck.skipAccumulator === undefined) deck.skipAccumulator = 0;
         deck.skipAccumulator += delta;
@@ -677,34 +699,60 @@ NumarkNS6.jogMove14bit = function(ch, ctrl, val, st, grp) {
         return; 
     }
     
-    if (deck.gridSlipMode) { var slipCmd = (delta > 0) ? "beats_translate_later" : "beats_translate_earlier"; engine.setValue(grp, slipCmd, 1); engine.setValue(grp, slipCmd, 0); return; }
-    if (deck.gridAdjustMode) { var adjustCmd = (delta > 0) ? "beats_adjust_slower" : "beats_adjust_faster"; engine.setValue(grp, adjustCmd, 1); engine.setValue(grp, adjustCmd, 0); return; }
+    // 2. 🔥 MODO SLIP (Ajuste de Grade) - AGORA COM "BALDE" DE SENSIBILIDADE
+    if (deck.gridSlipMode) { 
+        if (deck.gridSlipAccumulator === undefined) deck.gridSlipAccumulator = 0;
+        deck.gridSlipAccumulator += delta;
+
+        // Ajuste aqui: 20 é um peso bom. 40 fica bem pesado. 10 fica mais rápido.
+        var slipThreshold = 25; 
+
+        if (deck.gridSlipAccumulator > slipThreshold) {
+            engine.setValue(grp, "beats_translate_later", 1); 
+            engine.setValue(grp, "beats_translate_later", 0); 
+            deck.gridSlipAccumulator = 0;
+        } else if (deck.gridSlipAccumulator < -slipThreshold) {
+            engine.setValue(grp, "beats_translate_earlier", 1); 
+            engine.setValue(grp, "beats_translate_earlier", 0); 
+            deck.gridSlipAccumulator = 0;
+        }
+        return; 
+    }
+
+    // 3. 🔥 MODO ADJUST (Esticar Grade) - TAMBÉM COM "BALDE"
+    if (deck.gridAdjustMode) { 
+        if (deck.gridAdjustAccumulator === undefined) deck.gridAdjustAccumulator = 0;
+        deck.gridAdjustAccumulator += delta;
+
+        var adjustThreshold = 30; 
+
+        if (deck.gridAdjustAccumulator > adjustThreshold) {
+            engine.setValue(grp, "beats_adjust_slower", 1); 
+            engine.setValue(grp, "beats_adjust_slower", 0); 
+            deck.gridAdjustAccumulator = 0;
+        } else if (deck.gridAdjustAccumulator < -adjustThreshold) {
+            engine.setValue(grp, "beats_adjust_faster", 1); 
+            engine.setValue(grp, "beats_adjust_faster", 0); 
+            deck.gridAdjustAccumulator = 0;
+        }
+        return; 
+    }
     
     // --------------------------------------------------------
-    // A MÁGICA DA SEPARAÇÃO (AGORA COM PESO DE CDJ)
+    // TODO O RESTO (PLAY, SCRATCH, CDJ WEIGHT) CONTINUA IGUAL
     // --------------------------------------------------------
     if (engine.isScratching(deckNum)) {
-        // 1. MODO SCRATCH: Rápido e solto!
         engine.scratchTick(deckNum, delta);
     } else {
-        // 2. MODO JOG / CDJ:
         if (engine.getValue(grp, "play") > 0) {
-            // MÚSICA TOCANDO: Pitch Bend firme (lateral do prato)
             engine.setValue(grp, "jog", delta / NumarkNS6.pitchBendSensitivity); 
         } else {
-            // MÚSICA PAUSADA: Scrubbing Granulado!
             if (!deck.isAutoScrubbing) {
-                // Multiplicamos a resolução pelo "Peso". O Mixxx acha que o prato ficou gigante.
                 var heavyResolution = NumarkNS6.scratchSettings.jogResolution * NumarkNS6.cdjScrubWeight;
-                
                 engine.scratchEnable(deckNum, heavyResolution, 33.33, NumarkNS6.scratchSettings.alpha, NumarkNS6.scratchSettings.beta);
                 deck.isAutoScrubbing = true;
             }
-            
-            // Move a agulha com a engrenagem pesada
             engine.scratchTick(deckNum, delta);
-            
-            // O timer Sniper que desliga o som limpidamente
             if (deck.scrubTimer !== undefined && deck.scrubTimer !== 0) engine.stopTimer(deck.scrubTimer);
             deck.scrubTimer = engine.beginTimer(100, function() {
                 engine.scratchDisable(deckNum);
@@ -714,7 +762,6 @@ NumarkNS6.jogMove14bit = function(ch, ctrl, val, st, grp) {
         }
     }
 };
-
 
 NumarkNS6.scratchButtonInput = function (ch, ctrl, val, st, grp) {
     if (val === 0) return;
