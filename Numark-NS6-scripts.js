@@ -19,6 +19,8 @@ NumarkNS6.deckLoopMode = [null, true, true, true, true];
 NumarkNS6.harmonicSyncActive = [null, false, false, false, false];
 NumarkNS6.isProcessingHarmonic = [null, false, false, false, false];
 NumarkNS6.rateRanges = [0.04, 0.08, 0.16, 0.32, 0.64];
+// Dicionário de alta velocidade para evitar Regex no Jog Wheel
+NumarkNS6.groupToDeck = { "[Channel1]": 1, "[Channel2]": 2, "[Channel3]": 3, "[Channel4]": 4 };
 
 NumarkNS6.blinkState = 0;
 NumarkNS6.warnAfterTime = 60; 
@@ -42,10 +44,12 @@ NumarkNS6.scratchXFader = { xFaderMode: 0, xFaderCurve: 999.60, xFaderCalibratio
 
 NumarkNS6.updatePlayCueLEDs = function(deckNum, midiChannel) {
     if (NumarkNS6.isBooting) return; // 🛡️ Bloqueia durante a animação
-    var group = "[Channel" + deckNum + "]";
-    var statusCC = 0xB0 + midiChannel;
+   // var group = "[Channel" + deckNum + "]";
+    
     var deck = NumarkNS6.Decks[deckNum];
     if (!deck) return;
+    var group = deck.group;
+    var statusCC = 0xB0 + midiChannel;
 
     var trackLoaded = engine.getValue(group, "track_loaded") > 0;
     if (!trackLoaded) {
@@ -111,14 +115,29 @@ NumarkNS6.updateReverseLED = function(deckNum) {
 
 NumarkNS6.updateJogRing = function (deckNum) {
     if (NumarkNS6.isBooting || !NumarkNS6.Decks[deckNum]) return;
-    var group = "[Channel" + deckNum + "]", mChan = NumarkNS6.Decks[deckNum].midiChannel;
-    var duration = engine.getValue(group, "duration"), playPos = engine.getValue(group, "playposition");
+
+    // 1. Declaramos o 'deck' para o JavaScript saber com quem está falando
+    var deck = NumarkNS6.Decks[deckNum]; 
+    
+    // 2. Pegamos as variáveis já cacheadas direto da memória
+    var group = deck.group; 
+    var mChan = deck.midiChannel;
+
+    var duration = engine.getValue(group, "duration");
+    var playPos = engine.getValue(group, "playposition");
 
     if (duration <= 0 || engine.getValue(group, "track_loaded") === 0) {
-        if (NumarkNS6.lastJogRingValue[deckNum] !== 0) { midi.sendShortMsg(0xB0 + mChan, 0x3A, 0x00); NumarkNS6.lastJogRingValue[deckNum] = 0; }
+        if (NumarkNS6.lastJogRingValue[deckNum] !== 0) { 
+            midi.sendShortMsg(0xB0 + mChan, 0x3A, 0x00); 
+            NumarkNS6.lastJogRingValue[deckNum] = 0; 
+        }
         return;
     }
-    var ledIndex = Math.max(1, Math.min(21, Math.floor(((playPos * duration) / 1.8) % 1 * 21) + 1));
+    
+    // 3. OTIMIZAÇÃO: Trocamos o Math.floor() pelo Bitwise OR (| 0) para poupar CPU
+    var calc = (((playPos * duration) / 1.8) % 1 * 21) | 0;
+    var ledIndex = Math.max(1, Math.min(21, calc + 1));
+    
     var finalValue = (duration - (playPos * duration) <= NumarkNS6.warnAfterTime) ? (NumarkNS6.blinkState === 0 ? 0x00 : (ledIndex + 0x40)) : ledIndex;
 
     if (NumarkNS6.lastJogRingValue[deckNum] !== finalValue) {
@@ -263,6 +282,10 @@ NumarkNS6.init = function () {
 // 🎇 VEGAS MODE: ANIMAÇÃO BLINDADA COM SUPRESSÃO ATIVA
 // =======================================================
 
+// =======================================================
+// 🎇 VEGAS MODE: ANIMAÇÃO BLINDADA COM SUPRESSÃO ATIVA
+// =======================================================
+
 NumarkNS6.bootAnimation = function () {
     var step = 0;
     
@@ -329,10 +352,13 @@ NumarkNS6.bootAnimation = function () {
                 if (!NumarkNS6.Decks[dIdx]) continue;
                 var mc = NumarkNS6.Decks[dIdx].midiChannel;
                 
-                midi.sendShortMsg(0xB0 + mc, 0x3B, 0x01); // Touch Sensor
-                midi.sendShortMsg(0xB0 + dIdx, 0x18, NumarkNS6.deckLoopMode[dIdx] ? 0x01 : 0x02); // Loop Mode
+                // 1. Liga o sensor de toque do hardware
+                midi.sendShortMsg(0xB0 + mc, 0x3B, 0x01); 
+                // 2. Acende o LED do Loop
+                midi.sendShortMsg(0xB0 + dIdx, 0x18, NumarkNS6.deckLoopMode[dIdx] ? 0x01 : 0x02); 
                 
-                midi.sendShortMsg(0xB0 + mc, 0x12, 0x7F); // Scratch Mode
+                // 🎯 3. Acende o LED do Scratch corretamente no 0x12!
+                midi.sendShortMsg(0xB0 + mc, 0x12, 0x7F); 
                 NumarkNS6.Decks[dIdx].scratchMode = true;
             }
 
@@ -531,13 +557,16 @@ NumarkNS6.Deck = function(channel) {
             if (val > 0) {
                 // 🎯 O TIRO DE MISERICÓRDIA:
                 // Se você acabou de girar o prato, vamos abortar o timer e o scratch AGORA.
-                var deck = NumarkNS6.Decks[theDeck.deckNum];
+                // var deck = NumarkNS6.Decks[theDeck.deckNum];
+                var deckNum = script.deckFromGroup(grp);
+                var deck = NumarkNS6.Decks[deckNum];
+
                 if (deck.scrubTimer !== undefined && deck.scrubTimer !== 0) {
                     engine.stopTimer(deck.scrubTimer);
                     deck.scrubTimer = 0;
                 }
                 if (deck.isAutoScrubbing) {
-                    engine.scratchDisable(theDeck.deckNum);
+                    engine.scratchDisable(deckNum);
                     deck.isAutoScrubbing = false;
                 }
 
@@ -671,11 +700,20 @@ NumarkNS6.Deck = function(channel) {
 // =======================================================
 // 🎛️ PROCESSAMENTO DO JOG (COM ENGRENAGEM PESADA DE CDJ)
 // =======================================================
+// ===== CONFIGURAÇÕES DE SENSIBILIDADE - NS6 ORIGINAL =====
+// =======================================================
+// 🎛️ PROCESSAMENTO DO JOG (COM ENGRENAGEM PESADA DE CDJ)
+// =======================================================
 
-// Variável para você afinar o "Peso" do prato com a música pausada.
-// 1 = Normal. 4 a 6 = Peso e precisão de CDJ-2000.
+NumarkNS6.cdjScrubWeight = 10; 
+// Mantemos a sensibilidade original para botões, mas pro prato de 14 bits usaremos 60!
+NumarkNS6.pitchBendSensitivity = 5; 
+
 NumarkNS6.jogMove14bit = function(ch, ctrl, val, st, grp) {
-    var deckNum = script.deckFromGroup(grp);
+    // var deckNum = script.deckFromGroup(grp);
+    // Substitua var deckNum = script.deckFromGroup(grp); por:
+    var deckNum = NumarkNS6.groupToDeck[grp];
+
     if (ctrl === 0x00) NumarkNS6.jogMSB[deckNum] = val;
     if (ctrl === 0x20) NumarkNS6.jogLSB[deckNum] = val;
     if (ctrl !== 0x20) return; 
@@ -690,7 +728,7 @@ NumarkNS6.jogMove14bit = function(ch, ctrl, val, st, grp) {
     var deck = NumarkNS6.Decks[deckNum];
     if (!deck) return;
     
-    // 1. MODO SKIP (Beatjump) - Já estava bom
+    // 1. MODO SKIP (Beatjump via Prato - Protegido!)
     if (deck.skipMode) {
         if (deck.skipAccumulator === undefined) deck.skipAccumulator = 0;
         deck.skipAccumulator += delta;
@@ -699,14 +737,11 @@ NumarkNS6.jogMove14bit = function(ch, ctrl, val, st, grp) {
         return; 
     }
     
-    // 2. 🔥 MODO SLIP (Ajuste de Grade) - AGORA COM "BALDE" DE SENSIBILIDADE
+    // 2. MODO SLIP (Ajuste de Grade)
     if (deck.gridSlipMode) { 
         if (deck.gridSlipAccumulator === undefined) deck.gridSlipAccumulator = 0;
         deck.gridSlipAccumulator += delta;
-
-        // Ajuste aqui: 20 é um peso bom. 40 fica bem pesado. 10 fica mais rápido.
         var slipThreshold = 25; 
-
         if (deck.gridSlipAccumulator > slipThreshold) {
             engine.setValue(grp, "beats_translate_later", 1); 
             engine.setValue(grp, "beats_translate_later", 0); 
@@ -719,13 +754,11 @@ NumarkNS6.jogMove14bit = function(ch, ctrl, val, st, grp) {
         return; 
     }
 
-    // 3. 🔥 MODO ADJUST (Esticar Grade) - TAMBÉM COM "BALDE"
+    // 3. MODO ADJUST (Esticar Grade)
     if (deck.gridAdjustMode) { 
         if (deck.gridAdjustAccumulator === undefined) deck.gridAdjustAccumulator = 0;
         deck.gridAdjustAccumulator += delta;
-
         var adjustThreshold = 30; 
-
         if (deck.gridAdjustAccumulator > adjustThreshold) {
             engine.setValue(grp, "beats_adjust_slower", 1); 
             engine.setValue(grp, "beats_adjust_slower", 0); 
@@ -739,20 +772,28 @@ NumarkNS6.jogMove14bit = function(ch, ctrl, val, st, grp) {
     }
     
     // --------------------------------------------------------
-    // TODO O RESTO (PLAY, SCRATCH, CDJ WEIGHT) CONTINUA IGUAL
+    // 4. A MÁGICA DA SEPARAÇÃO (SCRATCH vs NUDGE)
     // --------------------------------------------------------
+    
+    // Se o Sensor de Toque (jogTouch14bit) ligou o motor...
     if (engine.isScratching(deckNum)) {
+        // ...Nós arrastamos a música! (Modo Scratch)
         engine.scratchTick(deckNum, delta);
     } else {
+        // Se a mão NÃO está no prato (ou o modo Scratch está desligado)...
         if (engine.getValue(grp, "play") > 0) {
-            engine.setValue(grp, "jog", delta / NumarkNS6.pitchBendSensitivity); 
+            // NUDGE: Divisor de 60 devolvido para domar os 14 Bits!
+            engine.setValue(grp, "jog", delta / 60); 
         } else {
+            // MÚSICA PAUSADA: Scrubbing com o motor CDJ "Timer Sniper"
             if (!deck.isAutoScrubbing) {
                 var heavyResolution = NumarkNS6.scratchSettings.jogResolution * NumarkNS6.cdjScrubWeight;
                 engine.scratchEnable(deckNum, heavyResolution, 33.33, NumarkNS6.scratchSettings.alpha, NumarkNS6.scratchSettings.beta);
                 deck.isAutoScrubbing = true;
             }
             engine.scratchTick(deckNum, delta);
+            
+            // O timer que limpa o áudio quando você para de girar
             if (deck.scrubTimer !== undefined && deck.scrubTimer !== 0) engine.stopTimer(deck.scrubTimer);
             deck.scrubTimer = engine.beginTimer(100, function() {
                 engine.scratchDisable(deckNum);
@@ -765,14 +806,22 @@ NumarkNS6.jogMove14bit = function(ch, ctrl, val, st, grp) {
 
 NumarkNS6.scratchButtonInput = function (ch, ctrl, val, st, grp) {
     if (val === 0) return;
-    var deckNum = script.deckFromGroup(grp), deck = NumarkNS6.Decks[deckNum];
+    
+    var deckNum = script.deckFromGroup(grp);
+    var deck = NumarkNS6.Decks[deckNum];
     if (!deck) return;
-    deck.scratchMode = deck.scratchMode === undefined ? false : !deck.scratchMode;
-    midi.sendShortMsg(0xB0 + ch, 0x12, deck.scratchMode ? 0x7F : 0x00); 
+    
+    // Alterna o modo na cabeça do Mixxx
+    deck.scratchMode = !deck.scratchMode;
+    
+    // 🎯 Devolvemos o LED para o endereço correto (0x12)
+    midi.sendShortMsg(0xB0 + deck.midiChannel, 0x12, deck.scratchMode ? 0x7F : 0x00); 
 };
 
 NumarkNS6.jogTouch14bit = function (ch, ctrl, val, st, grp) {
-    var deckNum = script.deckFromGroup(grp);
+    //var deckNum = script.deckFromGroup(grp);
+    // Substitua var deckNum = script.deckFromGroup(grp); por:
+    var deckNum = NumarkNS6.groupToDeck[grp];
     if (!NumarkNS6.Decks[deckNum]) return;
     if ((val > 0) && NumarkNS6.Decks[deckNum].scratchMode) engine.scratchEnable(deckNum, NumarkNS6.scratchSettings.jogResolution, 33.33, NumarkNS6.scratchSettings.alpha, NumarkNS6.scratchSettings.beta);
     else engine.scratchDisable(deckNum);
