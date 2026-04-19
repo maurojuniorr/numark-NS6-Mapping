@@ -23,7 +23,6 @@ NumarkNS6.rateRanges = [0.04, 0.08, 0.16, 0.32, 0.64];
 NumarkNS6.groupToDeck = { "[Channel1]": 1, "[Channel2]": 2, "[Channel3]": 3, "[Channel4]": 4 };
 
 NumarkNS6.blinkState = 0;
-NumarkNS6.warnAfterTime = 60; 
 NumarkNS6.blinkInterval = 1000; 
 NumarkNS6.encoderResolution = 0.05; 
 NumarkNS6.resetHotCuePageOnTrackLoad = true; 
@@ -37,6 +36,16 @@ NumarkNS6.SysExInit2 = [0xF0, 0x00, 0x01, 0x3F, 0x7F, 0x79, 0x60, 0x00, 0x01, 0x
 
 NumarkNS6.scratchXFader = { xFaderMode: 0, xFaderCurve: 999.60, xFaderCalibration: 1.0 };
 
+NumarkNS6.toggleEffects = function(channel, control, value, status, group) {
+    // Só executa a ação quando o botão é pressionado (value 127/0x7F), 
+    // ignorando quando o botão é solto (value 0)
+    if (value === 127) {
+        var currentState = engine.getValue("[Skin]", "show_effects");
+        
+        // Se for 1, vira 0. Se for 0, vira 1.
+        engine.setValue("[Skin]", "show_effects", currentState ? 0 : 1);
+    }
+}
 
 // =======================================================
 // 🚥 MOTOR VISUAL (Luzes de Estado de Play, Cue e Sync)
@@ -138,7 +147,11 @@ NumarkNS6.updateJogRing = function (deckNum) {
     var calc = (((playPos * duration) / 1.8) % 1 * 21) | 0;
     var ledIndex = Math.max(1, Math.min(21, calc + 1));
     
-    var finalValue = (duration - (playPos * duration) <= NumarkNS6.warnAfterTime) ? (NumarkNS6.blinkState === 0 ? 0x00 : (ledIndex + 0x40)) : ledIndex;
+    // ⚡ A MUDANÇA: Agora perguntamos direto para o Mixxx se o tempo de aviso chegou
+    var isWarning = engine.getValue(group, "end_of_track") > 0;
+
+    // Se estiver no fim (isWarning), ele alterna entre apagado e o LED com offset 0x40 (Pisca)
+    var finalValue = isWarning ? (NumarkNS6.blinkState === 0 ? 0x00 : (ledIndex + 0x40)) : ledIndex;
 
     if (NumarkNS6.lastJogRingValue[deckNum] !== finalValue) {
         midi.sendShortMsg(0xB0 + mChan, 0x3A, finalValue);
@@ -164,18 +177,38 @@ NumarkNS6.updateTouchStrip = function (value, group) {
 // ⏱️ GESTÃO DE TIMERS (Coração do Mapeamento)
 // =======================================================
 
+// =======================================================
+// ⏱️ GESTÃO DE TIMERS (Coração do Mapeamento)
+// =======================================================
+
 NumarkNS6.startTimers = function () {
     if (NumarkNS6.blinkTimer === 0) {
         NumarkNS6.blinkTimer = engine.beginTimer(500, function () {
             NumarkNS6.blinkState = (NumarkNS6.blinkState === 0) ? 0x7F : 0;
+            
             for (var i = 1; i <= 4; i++) {
                 if (NumarkNS6.Decks[i]) {
+                    var group = "[Channel" + i + "]";
+                    
+                    // 1. Atualiza LEDs de Hardware
                     NumarkNS6.updatePlayCueLEDs(i, NumarkNS6.Decks[i].midiChannel);
                     NumarkNS6.updateSyncLED(i, NumarkNS6.Decks[i].midiChannel);
+
+                    /// ⚡ 2. LÓGICA DO TEMPO PISCANTE (BLINDAGEM TOTAL)
+                    var controlName = "time_warning_" + i;
+
+                    // 🛡️ SÓ TENTA ENVIAR SE O CONTROLE EXISTIR NA SKIN
+                    // O getValue retorna 'undefined' ou 'null' se não existir, sem crashar.
+                    if (engine.getValue("[Skin]", controlName) !== undefined) {
+                        var isWarning = engine.getValue(group, "end_of_track") > 0;
+                        var isPlaying = engine.getValue(group, "play") > 0;
+                        engine.setValue("[Skin]", controlName, (isPlaying && isWarning && NumarkNS6.blinkState > 0) ? 1 : 0);
+                    }
                 }
             }
         });
     }
+    
     if (NumarkNS6.displayTimer === 0) {
         NumarkNS6.displayTimer = engine.beginTimer(100, function () {
             for (var i = 1; i <= 4; i++) {
@@ -221,7 +254,6 @@ NumarkNS6.init = function () {
     midi.sendSysexMsg(NumarkNS6.SysExInit1, NumarkNS6.SysExInit1.length);
     midi.sendSysexMsg(NumarkNS6.SysExInit2, NumarkNS6.SysExInit2.length);
 
-    
     // Tiro de misericórdia garantido nos Layers
     midi.sendShortMsg(0x80, 0x31, 0x00); 
     midi.sendShortMsg(0x80, 0x32, 0x00); 
@@ -244,26 +276,31 @@ NumarkNS6.init = function () {
                     NumarkNS6.updatePlayCueLEDs(dIdx, mChan); 
                     NumarkNS6.updateAutoLoopLEDs(dIdx); 
                     NumarkNS6.updateBpmMeter();
-                
                 }
             });
             engine.makeConnection(g, "loop_enabled", function (v) { 
                 if (!NumarkNS6.isBooting) midi.sendShortMsg(0xB0 + dIdx, 0x15, v ? 0x7F : 0x00); 
                 NumarkNS6.updateAutoLoopLEDs(dIdx);
             });
+            engine.makeConnection(g, "beatloop_size", function() { 
+                NumarkNS6.updateAutoLoopLEDs(dIdx); 
+            });
         })(i);
     }
 
-    // Agora o Mixxx avisa a régua de LED se QUALQUER um dos 4 decks sofrer alteração de pitch/bpm
+    // BPM Connections
     engine.makeConnection("[Channel1]", "bpm", NumarkNS6.updateBpmMeter);
     engine.makeConnection("[Channel2]", "bpm", NumarkNS6.updateBpmMeter);
     engine.makeConnection("[Channel3]", "bpm", NumarkNS6.updateBpmMeter);
     engine.makeConnection("[Channel4]", "bpm", NumarkNS6.updateBpmMeter);
     
+    // Crossfader Connections
     Object.keys(NumarkNS6.scratchXFader).forEach(function (control) {
         var connectionObject = engine.makeConnection("[Mixer Profile]", control, NumarkNS6.CrossfaderChangeCallback.bind(this));
-        connectionObject.trigger();
-        NumarkNS6.crossfaderCallbackConnections.push(connectionObject);
+        if (connectionObject) {
+            connectionObject.trigger();
+            NumarkNS6.crossfaderCallbackConnections.push(connectionObject);
+        }
     }.bind(this));
 
     NumarkNS6.FX.RoutingTable.forEach(function (cfg) {
@@ -273,10 +310,38 @@ NumarkNS6.init = function () {
     NumarkNS6.Mixer = new NumarkNS6.MixerTemplate();
     NumarkNS6.FX.init();
     NumarkNS6.FX.initRouting(); 
-    
+
+ // ⚡ INJEÇÃO VIA CONEXÃO NATIVA
+    // Criamos um "link direto" entre a Skin e a lógica da controladora
+    engine.makeConnection("[Skin]", "layer_left", function(value) {
+        NumarkNS6.leftDeck = (value === 1) ? 3 : 1;
+        if (NumarkNS6.Mixer && NumarkNS6.Mixer.deckChangeL) {
+            NumarkNS6.Mixer.deckChangeL.output(value);
+        }
+        print("Injeção Layer Esq: Deck " + NumarkNS6.leftDeck);
+    });
+
+    engine.makeConnection("[Skin]", "layer_right", function(value) {
+        NumarkNS6.rightDeck = (value === 1) ? 4 : 2;
+        if (NumarkNS6.Mixer && NumarkNS6.Mixer.deckChangeR) {
+            NumarkNS6.Mixer.deckChangeR.output(value);
+        }
+        print("Injeção Layer Dir: Deck " + NumarkNS6.rightDeck);
+    });
+
+    // 💉 DISPARO DA INJEÇÃO: Força o Mixxx a ler os valores salvos AGORA
+    engine.trigger("[Skin]", "layer_left");
+    engine.trigger("[Skin]", "layer_right");
+
     NumarkNS6.bootAnimation();
-    print("Numark NS6: Inicialização escura com bloqueio de notas. Lançando animação...");
+    
+    // Baixa o escudo após o boot
+    NumarkNS6.isBooting = false; 
+
+    print("Numark NS6: Sincronia de Layers restaurada! Esq: Deck " + NumarkNS6.leftDeck + " | Dir: Deck " + NumarkNS6.rightDeck);
 };
+
+
 
 // =======================================================
 // 🎇 VEGAS MODE: ANIMAÇÃO BLINDADA COM SUPRESSÃO ATIVA
@@ -292,7 +357,7 @@ NumarkNS6.bootAnimation = function () {
     NumarkNS6.animTimer = engine.beginTimer(50, function () {
         step++;
         
-        // 🛡️ SUPRESSÃO ATIVA: Enquanto tiver show, cala a boca do Layer e do Auto Loop!
+        // 🛡️ SUPRESSÃO ATIVA
         midi.sendShortMsg(0x80, 0x31, 0x00); midi.sendShortMsg(0x80, 0x32, 0x00); 
         midi.sendShortMsg(0x80, 0x33, 0x00); midi.sendShortMsg(0x80, 0x34, 0x00);
         for (var d = 1; d <= 4; d++) midi.sendShortMsg(0xB0 + d, 0x18, 0x00);
@@ -306,12 +371,9 @@ NumarkNS6.bootAnimation = function () {
             var deck = NumarkNS6.Decks[i];
             if (!deck) continue;
             var cc = 0xB0 + deck.midiChannel;
-            
             var stripVal = (step <= 15) ? step : (30 - step);
             if (stripVal >= 1 && stripVal <= 15) midi.sendShortMsg(cc, 0x4E, stripVal);
-            
             midi.sendShortMsg(cc, 0x3A, Math.min(21, step));
-            
             if (step % 3 === 0) {
                 var cueIndex = Math.floor(step / 3);
                 if (cueIndex >= 1 && cueIndex <= 5) midi.sendShortMsg(cc, 0x0A + cueIndex, 0x7F);
@@ -326,7 +388,6 @@ NumarkNS6.bootAnimation = function () {
         for (var d = 1; d <= 4; d++) {
             if (!NumarkNS6.Decks[d]) continue;
             var mChan = NumarkNS6.Decks[d].midiChannel;
-            
             midi.sendShortMsg(0xB0 + mChan, 0x4E, 0x00); 
             midi.sendShortMsg(0xB0 + mChan, 0x3A, 0x00); 
             for (var h = 1; h <= 5; h++) midi.sendShortMsg(0xB0 + mChan, 0x0A + h, 0x00); 
@@ -341,29 +402,26 @@ NumarkNS6.bootAnimation = function () {
         }
         NumarkNS6.updateBpmMeter();
 
-        // 3. 🎭 O ATRASO DRAMÁTICO (O Grande Despertar Real)
+        // 🎯 O GRANDE DESPERTAR (Ajustado para 4 Decks)
         engine.beginTimer(300, function() {
             
-            // Reacende os Layers
-            midi.sendShortMsg(0xB0, 0x50, 0x00); 
-            midi.sendShortMsg(0xB0, 0x51, 0x00);
+            // 💉 EM VEZ DE ZERAR (0x00), NÓS DISPARAMOS A SINCRONIA DA SKIN!
+            // Isso força o hardware a assumir o que está na tela no final do boot
+            engine.trigger("[Skin]", "layer_left");
+            engine.trigger("[Skin]", "layer_right");
 
             for (var dIdx = 1; dIdx <= 4; dIdx++) {
                 if (!NumarkNS6.Decks[dIdx]) continue;
                 var mc = NumarkNS6.Decks[dIdx].midiChannel;
-                
-                // 1. Liga o sensor de toque do hardware
-                midi.sendShortMsg(0xB0 + mc, 0x3B, 0x01); 
-                // 2. Acende o LED do Loop
+                midi.sendShortMsg(0xB0 + mc, 0x3B, 0x01); // Touch sensor ON
                 midi.sendShortMsg(0xB0 + dIdx, 0x18, NumarkNS6.deckLoopMode[dIdx] ? 0x01 : 0x02); 
-                
-                // 🎯 3. Acende o LED do Scratch corretamente no 0x12!
-                midi.sendShortMsg(0xB0 + mc, 0x12, 0x7F); 
+                NumarkNS6.updateAutoLoopLEDs(dIdx); // Força os LEDs de 1, 2, 4, 8 a acenderem!
+                midi.sendShortMsg(0xB0 + mc, 0x12, 0x7F); // Scratch LED ON
                 NumarkNS6.Decks[dIdx].scratchMode = true;
             }
 
             NumarkNS6.startTimers(); 
-            print("Numark NS6: Acendimento sincronizado! A pista é sua!");
+            print("Numark NS6: Boot Finalizado. Sincronia de Layers injetada com sucesso!");
         }, true);
 
     }, true);
@@ -380,23 +438,33 @@ NumarkNS6.rightDeck = 2;
 NumarkNS6.MixerTemplate = function() {
     
     // 🎧 Botões de Layer (Deck Change) com rastreamento para o BPM Meter
-    this.deckChangeL = new components.Button({ 
-        midi: [0xB0, 0x50], 
-        input: function(_c, _ctrl, value) { 
-            this.output(value); // Acende/Apaga o LED
-            NumarkNS6.leftDeck = (value > 0) ? 3 : 1; // Se apertou, estamos no Deck 3. Senão, 1.
-            if (typeof NumarkNS6.updateBpmMeter === "function") NumarkNS6.updateBpmMeter(); 
-        } 
-    });
-    
-    this.deckChangeR = new components.Button({ 
-        midi: [0xB0, 0x51], 
-        input: function(_c, _ctrl, value) { 
-            this.output(value); 
-            NumarkNS6.rightDeck = (value > 0) ? 4 : 2; // Se apertou, estamos no Deck 4. Senão, 2.
-            if (typeof NumarkNS6.updateBpmMeter === "function") NumarkNS6.updateBpmMeter(); 
-        } 
-    });
+    // LADO DIREITO (Deck 2 / 4)
+this.deckChangeR = new components.Button({ 
+    midi: [0xB0, 0x51], 
+    input: function(_c, _ctrl, value) { 
+        this.output(value); 
+        NumarkNS6.rightDeck = (value > 0) ? 4 : 2; 
+        
+        // MÁGICA DO DRIFT: Sincroniza a Skin (1 se for Deck 4, 0 se for Deck 2)
+        engine.setValue("[Skin]", "layer_right", (value > 0) ? 1 : 0);
+
+        if (typeof NumarkNS6.updateBpmMeter === "function") NumarkNS6.updateBpmMeter(); 
+    } 
+});
+
+// LADO ESQUERDO (Deck 1 / 3)
+this.deckChangeL = new components.Button({ 
+    midi: [0xB0, 0x50], // Verifique se o midino do L é 0x50
+    input: function(_c, _ctrl, value) { 
+        this.output(value); 
+        NumarkNS6.leftDeck = (value > 0) ? 3 : 1; 
+        
+        // MÁGICA DO DRIFT: Sincroniza a Skin (1 se for Deck 3, 0 se for Deck 1)
+        engine.setValue("[Skin]", "layer_left", (value > 0) ? 1 : 0);
+
+        if (typeof NumarkNS6.updateBpmMeter === "function") NumarkNS6.updateBpmMeter(); 
+    } 
+});
     
     this.channelInputSwitcher1 = new components.Button({ midi: [0x90, 0x47], group: "[Channel1]", inKey: "mute", type: components.Button.prototype.types.powerWindow });
     this.channelInputSwitcher2 = new components.Button({ midi: [0x90, 0x48], group: "[Channel2]", inKey: "mute", type: components.Button.prototype.types.powerWindow });
@@ -444,8 +512,171 @@ NumarkNS6.MixerTemplate = function() {
         }
     });
 
-    this.backButton = new components.Button({ midi: [0x90, 0x06], group: "[Library]", input: function (ch, ctrl, value) { if (value > 0) engine.setValue("[Library]", "MoveFocus", -1); } });
-    this.fwdButton = new components.Button({ midi: [0x90, 0x07], group: "[Library]", input: function (ch, ctrl, value) { if (value > 0) engine.setValue("[Library]", "MoveFocus", 1); } });
+    // this.backButton = new components.Button({ midi: [0x90, 0x06], group: "[Library]", input: function (ch, ctrl, value) { if (value > 0) engine.setValue("[Library]", "MoveFocus", -1); } });
+    // this.fwdButton = new components.Button({ midi: [0x90, 0x07], group: "[Library]", input: function (ch, ctrl, value) { if (value > 0) engine.setValue("[Library]", "MoveFocus", 1); } });
+
+    // --- 🗺️ NAVEGAÇÃO AVANÇADA DA SKIN (Engine DJ) ---
+    
+    // =======================================================
+    // 🗺️ NAVEGAÇÃO HÍBRIDA UNIVERSAL (SKIN CUSTOM + PADRÃO)
+    // =======================================================
+    // 1. A Função de Faxina (Limpa tudo para recomeçar do zero)
+    NumarkNS6.resetTabs = function() {
+        // Limpa Skin Custom (Abas)
+        engine.setValue("[Tab]", "overview", 0);
+        engine.setValue("[Tab]", "library", 0);
+        engine.setValue("[Tab]", "samplers", 0);
+        engine.setValue("[Sidebar]", "sidebar_visible", 0);
+        
+        // Limpa Skins Padrão (Big Library)
+        // engine.setValue("[Library]", "show_maximized_library", 0);
+        engine.setValue("[Master]", "maximize_library", 0);
+        engine.setValue("[Samplers]", "show_samplers", 0);
+        // engine.setValue("[Library]", "sidebar_visible", 0);
+    };
+
+    // 2. Botão VIEW (0x01) - Volta para as Waveforms
+    this.viewButton = new components.Button({
+        midi: [0x90, 0x01],
+        input: function (ch, ctrl, val) {
+            if (val > 0) {
+                NumarkNS6.resetTabs(); // Fecha tudo
+                engine.setValue("[Tab]", "overview", 1); // Volta pro deck na custom
+            }
+        }
+    });
+
+    // 3. Botão FILES (0x05) - Abre a Big Library (Sem Pastas)
+    this.filesButton = new components.Button({
+        midi: [0x90, 0x05],
+        input: function (ch, ctrl, val) {
+            if (val > 0) {
+                NumarkNS6.resetTabs();
+                // Ativa na Custom
+                engine.setValue("[Tab]", "library", 1);
+                engine.setValue("[Sidebar]", "sidebar_visible", 0);
+                
+                // 🎯 CORREÇÃO: Ativa nas Padrão (Usamos os dois comandos para garantir!)
+                engine.setValue("[Library]", "show_maximized_library", 1);
+                engine.setValue("[Master]", "maximize_library", 1);
+                engine.setValue("[Library]", "sidebar_visible", 0);
+            }
+        }
+    });
+
+    // 4. Botão CRATES (0x0B) - Abre a Big Library (Com Pastas)
+    this.cratesButton = new components.Button({
+        midi: [0x90, 0x0B],
+        input: function (ch, ctrl, val) {
+            if (val > 0) {
+                NumarkNS6.resetTabs();
+                // Ativa na Custom
+                engine.setValue("[Tab]", "library", 1);
+                engine.setValue("[Sidebar]", "sidebar_visible", 1);
+                
+                // 🎯 CORREÇÃO: Ativa nas Padrão
+                engine.setValue("[Library]", "show_maximized_library", 1);
+                engine.setValue("[Master]", "maximize_library", 1);
+                engine.setValue("[Library]", "sidebar_visible", 1);
+            }
+        }
+    });
+
+    // 5. Botão PREPARE (0x0D) - Samplers
+    this.prepareButton = new components.Button({
+        midi: [0x90, 0x0D],
+        input: function (ch, ctrl, val) {
+            if (val > 0) {
+                NumarkNS6.resetTabs();
+                engine.setValue("[Tab]", "samplers", 1);
+                engine.setValue("[Samplers]", "show_samplers", 1);
+            }
+        }
+    });
+
+    // =======================================================
+    // 🚥 MOTOR DE LEDS DA NAVEGAÇÃO
+    // =======================================================
+    NumarkNS6.updateNavLEDs = function() {
+        var isLib = (engine.getValue("[Tab]", "library") > 0) || (engine.getValue("[Library]", "show_maximized_library") > 0) || (engine.getValue("[Master]", "maximize_library") > 0);
+        var isSamp = (engine.getValue("[Tab]", "samplers") > 0) || (engine.getValue("[Samplers]", "show_samplers") > 0);
+        var isSide = (engine.getValue("[Sidebar]", "sidebar_visible") > 0) || (engine.getValue("[Library]", "sidebar_visible") > 0);
+
+        midi.sendShortMsg(0xB0, 0x01, 0x7F); // VIEW sempre ON
+        midi.sendShortMsg(0xB0, 0x05, (isLib && !isSide && !isSamp) ? 0x7F : 0x00);
+        midi.sendShortMsg(0xB0, 0x03, (isLib && isSide && !isSamp) ? 0x7F : 0x00);
+        midi.sendShortMsg(0xB0, 0x04, isSamp ? 0x7F : 0x00);
+    };
+    engine.beginTimer(250, NumarkNS6.updateNavLEDs);
+
+
+
+
+
+    // Botão BACK (Esquerda / Voltar Foco)
+    this.backButton = new components.Button({ 
+        midi: [0x90, 0x06], group: "[Library]", 
+        input: function (ch, ctrl, value) { 
+            if (value > 0) {
+                // O Olheiro: Verifica se ALGUM botão SHIFT da controladora está pressionado
+                var isShifted = false;
+                for (var i = 1; i <= 4; i++) { 
+                    if (NumarkNS6.Decks[i] && NumarkNS6.Decks[i].shiftButton && NumarkNS6.Decks[i].shiftButton.state) { 
+                        isShifted = true; break; 
+                    } 
+                }
+                
+                if (isShifted) {
+                    // MÁGICA NOVA: Shift + Back = Esconder/Mostrar a barra de pastas (Sidebar)
+                    var isVisible = engine.getValue("[Sidebar]", "sidebar_visible");
+                    engine.setValue("[Sidebar]", "sidebar_visible", !isVisible);
+                } else {
+                    // FUNÇÃO ORIGINAL: Apenas volta o foco de navegação
+                    engine.setValue("[Library]", "MoveFocus", -1);
+                }
+            }
+        } 
+    });
+
+    // Botão FWD (Direita / Avançar Foco)
+    this.fwdButton = new components.Button({ 
+        midi: [0x90, 0x07], group: "[Library]", 
+        input: function (ch, ctrl, value) { 
+            if (value > 0) {
+                // FUNÇÃO ORIGINAL: Apenas avança o foco de navegação
+                engine.setValue("[Library]", "MoveFocus", 1);
+            }
+        } 
+    });
+
+    // Encoder Button (Push): Abrir/Fechar Subpastas
+    this.navigationEncoderButton = new components.Button({
+        midi: [0x90, 0x08], group: "[Library]",
+        input: function (ch, ctrl, val) {
+            if (val === 0) return; // Só processa ao apertar
+
+            // 1. Verifica se o SHIFT está pressionado (para funções secundárias)
+            var isShifted = false;
+            for (var i = 1; i <= 4; i++) { 
+                if (NumarkNS6.Decks[i] && NumarkNS6.Decks[i].shiftButton && NumarkNS6.Decks[i].shiftButton.state) { 
+                    isShifted = true; break; 
+                } 
+            }
+            
+            if (isShifted) {
+                // SHIFT + CLICK: Liga/Desliga o AutoDJ
+                engine.setValue("[AutoDJ]", "enabled", !engine.getValue("[AutoDJ]", "enabled"));
+                // Feedback visual rápido no LED do botão
+                midi.sendShortMsg(0xB0, 0x08, 0x7F);
+                engine.beginTimer(100, function() { midi.sendShortMsg(0xB0, 0x08, 0x00); }, true);
+            } else {
+                // 🎯 COMPORTAMENTO REAL: Abrir ou Fechar Subpasta
+                // Este comando expande ou recolhe o item selecionado na árvore lateral
+                engine.setValue("[Playlist]", "ToggleSelectedSidebarItem", 1);
+            }
+        }
+    });
+
 };
 NumarkNS6.MixerTemplate.prototype = new components.ComponentContainer();
 
@@ -653,10 +884,14 @@ NumarkNS6.Deck = function(channel) {
     });
 
     this.manageChannelIndicator = () => {
-        this.duration=engine.getParameter(theDeck.group, "duration");
-        if (engine.getParameter(theDeck.group, "playposition") * this.duration > (this.duration - NumarkNS6.warnAfterTime)) {
-            this.alternating=!this.alternating; midi.sendShortMsg(0xB0, 0x1D+channel, this.alternating?0x7F:0x0);
-        } else midi.sendShortMsg(0xB0, 0x1D+channel, 0x7F);
+        var isWarning = engine.getValue(theDeck.group, "end_of_track") > 0; // ⚡ Mixxx decide o tempo!
+        
+        if (isWarning) {
+            this.alternating = !this.alternating; 
+            midi.sendShortMsg(0xB0, 0x1D + channel, this.alternating ? 0x7F : 0x0);
+        } else {
+            midi.sendShortMsg(0xB0, 0x1D + channel, 0x7F);
+        }
     };
     engine.makeConnection(this.group, "track_loaded", function(val) {
         if (val === 0) { engine.stopTimer(theDeck.blinkTimer); theDeck.blinkTimer=0; return; }
@@ -670,7 +905,9 @@ NumarkNS6.Deck = function(channel) {
     this.bpmSlider = new components.Pot({ midi: [0xB0+channel, 0x01, 0xB0+channel, 0x37], inKey: "rate", group: theDeck.group, invert: true });
     
     this.pitchLedHandler = engine.makeConnection(this.group, "rate", function(val) { if(!NumarkNS6.isBooting) midi.sendShortMsg(0xB0+channel, 0x37, val===0 ? 0x7F : 0x00); }.bind(this));
-    this.pitchLedHandler.trigger();
+    if (this.pitchLedHandler) {
+        this.pitchLedHandler.trigger();
+    }
 
     this.pitchRange = new components.Button({
         midi: [0x90 + channel, 0x1A, 0xB0 + channel, 0x1E], key: "rateRange",
@@ -978,13 +1215,14 @@ NumarkNS6.FX.initRouting = function() {
             midi: [0x90, cfg.note], group: group, key: key,
             input: function (ch, ctrl, val, st, grp) { if (val > 0) engine.setValue(grp, key, !engine.getValue(grp, key)); }
         });
-        engine.makeConnection(group, key, function(v) { if (!NumarkNS6.isBooting) midi.sendShortMsg(0xB0, cfg.led, v > 0 ? 0x7F : 0x00); }).trigger();
-    });
+        var fxConn = engine.makeConnection(group, key, function(v) { if (!NumarkNS6.isBooting) midi.sendShortMsg(0xB0, cfg.led, v > 0 ? 0x7F : 0x00); });
+        if (fxConn) fxConn.trigger();    });
 };
 
 NumarkNS6.btnEfeitos = function(ch, ctrl, val) { if (val > 0) engine.setValue("[Skin]", "show_effectrack", !engine.getValue("[Skin]", "show_effectrack")); };
 NumarkNS6.btnMixer = function(ch, ctrl, val) { if (val > 0) engine.setValue("[Skin]", "show_mixer", !engine.getValue("[Skin]", "show_mixer")); };
 NumarkNS6.btnSamplers = function(ch, ctrl, val) { if (val > 0) engine.setValue("[Skin]", "show_samplers", !engine.getValue("[Skin]", "show_samplers")); };
+
 
 
 // =======================================================

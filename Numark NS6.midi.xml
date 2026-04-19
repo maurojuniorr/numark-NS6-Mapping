@@ -794,6 +794,17 @@
     
 
       <!-- nav encoder -->
+
+      <control>
+          <group>[Skin]</group>
+          <key>NumarkNS6.toggleEffects</key> 
+          <description>Toggle Effects Container</description>
+          <status>0x90</status>
+          <midino>0x30</midino>
+          <options>
+              <script-binding/>
+          </options>
+      </control>
       <control>
         <group>[EffectRack1_EffectUnit1]</group>
         <key>NumarkNS6.FX.encoderLeft.input</key>
@@ -889,6 +900,7 @@
           <script-binding/>
         </options>
       </control>
+      
       <control>
         <group>[EffectRack1_EffectUnit2]</group>
         <key>NumarkNS6.FX.Assign.btn_2_Channel3.input</key>
@@ -953,21 +965,21 @@
       <!-- End Fx -->
       <control>
         <group>[Skin]</group>
-        <key>NumarkNS6.btnEfeitos</key>
+        <key>NumarkNS6.Mixer.cratesButton.input</key>
         <status>0x90</status><midino>0x0B</midino>
         <options><script-binding/></options>
       </control>
       
       <control>
         <group>[Skin]</group>
-        <key>NumarkNS6.btnMixer</key>
+        <key>NumarkNS6.Mixer.prepareButton.input</key>
         <status>0x90</status><midino>0x09</midino>
         <options><script-binding/></options>
       </control>
       
       <control>
         <group>[Skin]</group>
-        <key>NumarkNS6.btnSamplers</key>
+        <key>NumarkNS6.Mixer.filesButton.input</key>
         <status>0x90</status><midino>0x0A</midino>
         <options><script-binding/></options>
       </control>
