@@ -134,6 +134,30 @@ NumarkNS6.filteredPot14Bit = function (options) {
     return pot;
 };
 
+// The NS6 pitch fader sends MSB and LSB separately. Keep both bytes locally
+// and write the normalized parameter ourselves, so every LSB step reaches
+// Mixxx instead of falling back to 7-bit-sized BPM jumps.
+NumarkNS6.precisePitch14Bit = function (group) {
+    return {
+        msb: 0,
+        lsb: 0,
+        initialized: false,
+        write: function () {
+            var raw = (this.msb << 7) | this.lsb;
+            engine.setParameter(group, "rate", 1.0 - (raw / 16383.0));
+        },
+        inputMSB: function (ch, ctrl, value) {
+            this.msb = value;
+            this.initialized = true;
+            this.write();
+        },
+        inputLSB: function (ch, ctrl, value) {
+            this.lsb = value;
+            if (this.initialized) this.write();
+        }
+    };
+};
+
 NumarkNS6.crossfader = NumarkNS6.filtered14Bit("[Master]", "crossfader", function (value) { return (value * 2.0) - 1.0; });
 NumarkNS6.crossfaderMSB = function (ch, ctrl, value) { NumarkNS6.crossfader.inputMSB(ch, ctrl, value); };
 NumarkNS6.crossfaderLSB = function (ch, ctrl, value) { NumarkNS6.crossfader.inputLSB(ch, ctrl, value); };
@@ -820,7 +844,7 @@ NumarkNS6.Deck = function(channel) {
 
     this.eqKnobs = [];
     for (var i = 1; i <= 3; i++) {
-        this.eqKnobs[i] = new components.Pot({
+        this.eqKnobs[i] = NumarkNS6.filteredPot14Bit({
             midi: [0xB0, 0x29 + i + 5 * (channel - 1)], group: "[EqualizerRack1_" + theDeck.group + "_Effect1]", inKey: "parameter" + i,
             inValueScale: function (v) { return (v > this.max * 0.46997 && v < this.max * 0.50659) ? (v + this.max * 0.015625) / this.max : v / this.max; }
         });
@@ -968,7 +992,7 @@ NumarkNS6.Deck = function(channel) {
     this.pitchBendMinus = new components.Button({ midi: [0x90+channel, 0x18, 0xB0+channel, 0x3D], key: "rate_temp_down", shift: function() { this.inkey = "rate_temp_down_small"; }, unshift: function() { this.inkey = "rate_temp_down"; } });
     this.pitchBendPlus = new components.Button({ midi: [0x90+channel, 0x19, 0xB0+channel, 0x3C], key: "rate_temp_up", shift: function() { this.inkey = "rate_temp_up_small"; }, unshift: function() { this.inkey = "rate_temp_up"; } });
     this.keylockButton = new components.Button({ midi: [0x90+channel, 0x1B, 0xB0+channel, 0x10], type: components.Button.prototype.types.toggle, shift: function() { this.inKey="sync_key"; this.outKey="sync_key"; }, unshift: function() { this.inKey="keylock"; this.outKey="keylock"; } });
-    this.bpmSlider = new components.Pot({ midi: [0xB0+channel, 0x01, 0xB0+channel, 0x37], inKey: "rate", group: theDeck.group, invert: true });
+    this.bpmSlider = NumarkNS6.precisePitch14Bit(theDeck.group);
     
     this.pitchLedHandler = engine.makeConnection(this.group, "rate", function(val) { if(!NumarkNS6.isBooting) midi.sendShortMsg(0xB0+channel, 0x37, val===0 ? 0x7F : 0x00); }.bind(this));
     if (this.pitchLedHandler) {
