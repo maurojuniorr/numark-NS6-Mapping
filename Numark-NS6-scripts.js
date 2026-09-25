@@ -147,6 +147,11 @@ NumarkNS6.precisePitch14Bit = function (group) {
             engine.setParameter(group, "rate", 1.0 - (raw / 16383.0));
         },
         inputMSB: function (ch, ctrl, value) {
+            // The NS6 can inject an isolated 0x7D/0x7F MSB. Never turn that
+            // malformed packet into a jump to the end of the pitch range.
+            if (!this.initialized && value >= 124) return;
+            if (this.initialized && value >= 124 && this.msb <= 110) return;
+            if (this.initialized && Math.abs(value - this.msb) > 32) return;
             this.msb = value;
             this.initialized = true;
             this.write();
