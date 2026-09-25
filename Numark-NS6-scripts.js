@@ -1147,8 +1147,16 @@ NumarkNS6.jogTouch14bit = function (ch, ctrl, val, st, grp) {
         deck.scrubTimer = 0;
     }
     deck.isAutoScrubbing = false;
-    if ((val > 0) && deck.scratchMode) engine.scratchEnable(deckNum, NumarkNS6.scratchSettings.jogResolution, 33.33, NumarkNS6.scratchSettings.alpha, NumarkNS6.scratchSettings.beta);
-    else engine.scratchDisable(deckNum);
+    if ((val > 0) && deck.scratchMode) {
+        // O scratch pausa o transporte enquanto o prato está pressionado.
+        // Guarde o estado para que a soltura nunca deixe uma faixa em execução parada.
+        deck.wasPlayingBeforeScratch = engine.getValue(grp, "play") > 0;
+        engine.scratchEnable(deckNum, NumarkNS6.scratchSettings.jogResolution, 33.33, NumarkNS6.scratchSettings.alpha, NumarkNS6.scratchSettings.beta);
+    } else {
+        engine.scratchDisable(deckNum);
+        if (deck.wasPlayingBeforeScratch) engine.setValue(grp, "play", 1);
+        deck.wasPlayingBeforeScratch = false;
+    }
 };
 
 NumarkNS6.reverseButtonInput = function (ch, ctrl, val, st, grp) {
