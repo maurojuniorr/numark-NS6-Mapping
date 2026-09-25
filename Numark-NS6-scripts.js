@@ -10,6 +10,7 @@ NumarkNS6.blinkTimer = 0;
 NumarkNS6.displayTimer = 0;
 NumarkNS6.navTimer = 0;
 NumarkNS6.crossfaderChanged = false;
+NumarkNS6.activePFLDeck = 0;
 
 NumarkNS6.Decks = [];
 NumarkNS6.jogMSB = [0, 0, 0, 0, 0];
@@ -367,6 +368,10 @@ NumarkNS6.init = function () {
             });
             engine.makeConnection(g, "beatloop_size", function() { 
                 NumarkNS6.updateAutoLoopLEDs(dIdx); 
+            });
+            engine.makeConnection(g, "pfl", function(value) {
+                if (value > 0) NumarkNS6.activePFLDeck = dIdx;
+                else if (NumarkNS6.activePFLDeck === dIdx) NumarkNS6.activePFLDeck = 0;
             });
         })(i);
     }
@@ -903,7 +908,8 @@ NumarkNS6.Deck = function(channel) {
             // A NS6 envia press/release. Trate apenas o press como seleção de
             // pré-escuta e mantenha somente um canal ativo por vez.
             if (val === 0) return;
-            var enableSelected = engine.getValue(groupName, "pfl") === 0;
+            var enableSelected = NumarkNS6.activePFLDeck !== channel;
+            NumarkNS6.activePFLDeck = enableSelected ? channel : 0;
             for (var deckNum = 1; deckNum <= 4; deckNum++) {
                 engine.setValue("[Channel" + deckNum + "]", "pfl", (enableSelected && deckNum === channel) ? 1 : 0);
             }
