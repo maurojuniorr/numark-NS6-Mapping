@@ -432,6 +432,13 @@ NumarkNS6.init = function () {
     engine.makeConnection("[Channel2]", "bpm", NumarkNS6.updateBpmMeter);
     engine.makeConnection("[Channel3]", "bpm", NumarkNS6.updateBpmMeter);
     engine.makeConnection("[Channel4]", "bpm", NumarkNS6.updateBpmMeter);
+    // The BPM meter's `bpm` value is already rate-adjusted. Listening to
+    // `rate` simply refreshes the LED strip for every pitch-fader movement;
+    // it must not be multiplied into BPM again.
+    engine.makeConnection("[Channel1]", "rate", NumarkNS6.updateBpmMeter);
+    engine.makeConnection("[Channel2]", "rate", NumarkNS6.updateBpmMeter);
+    engine.makeConnection("[Channel3]", "rate", NumarkNS6.updateBpmMeter);
+    engine.makeConnection("[Channel4]", "rate", NumarkNS6.updateBpmMeter);
     
     // Crossfader Connections
     Object.keys(NumarkNS6.scratchXFader).forEach(function (control) {
