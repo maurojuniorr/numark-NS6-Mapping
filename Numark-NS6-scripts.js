@@ -1040,10 +1040,10 @@ NumarkNS6.Deck = function(channel) {
     
     this.pitchLedHandler = engine.makeConnection(this.group, "rate", function(val) {
         // A centred 14-bit fader does not always produce binary zero (the
-        // midpoint is 8192/16383). Treat a tiny ±0.01% window as centre so
+        // midpoint is 8192/16383). Treat a tiny ±0.02% window as centre so
         // the pitch-lock LED reflects the physical detent reliably.
         if (!NumarkNS6.isBooting) {
-            midi.sendShortMsg(0xB0 + channel, 0x37, Math.abs(val) <= 0.0001 ? 0x7F : 0x00);
+            midi.sendShortMsg(0xB0 + channel, 0x37, Math.abs(val) <= 0.0002 ? 0x7F : 0x00);
         }
     }.bind(this));
     if (this.pitchLedHandler) {
@@ -1338,7 +1338,7 @@ NumarkNS6.tapButtonInput = function (ch, ctrl, val, st, grp) { if (val === 0) re
 NumarkNS6.lastBpmLed = -1;
 // `bpm` is already the effective, rate-adjusted BPM in Mixxx. Keep the
 // centre precise without making it impossible to hit with a 14-bit fader.
-NumarkNS6.bpmMeterCenterTolerance = 0.01;
+NumarkNS6.bpmMeterCenterTolerance = 0.02;
 
 NumarkNS6.updateBpmMeter = function() {
     if (NumarkNS6.isBooting) return; // 🛡️ Bloqueia durante a animação do Vegas Mode!
