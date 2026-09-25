@@ -1148,13 +1148,25 @@ NumarkNS6.jogTouch14bit = function (ch, ctrl, val, st, grp) {
     }
     deck.isAutoScrubbing = false;
     if ((val > 0) && deck.scratchMode) {
+        // Invalida uma retomada pendente de um release anterior.
+        deck.scratchSequence = (deck.scratchSequence || 0) + 1;
         // O scratch pausa o transporte enquanto o prato está pressionado.
         // Guarde o estado para que a soltura nunca deixe uma faixa em execução parada.
         deck.wasPlayingBeforeScratch = engine.getValue(grp, "play") > 0;
         engine.scratchEnable(deckNum, NumarkNS6.scratchSettings.jogResolution, 33.33, NumarkNS6.scratchSettings.alpha, NumarkNS6.scratchSettings.beta);
     } else {
+        var resumePlayback = deck.wasPlayingBeforeScratch;
+        var releaseSequence = (deck.scratchSequence || 0) + 1;
+        deck.scratchSequence = releaseSequence;
         engine.scratchDisable(deckNum);
-        if (deck.wasPlayingBeforeScratch) engine.setValue(grp, "play", 1);
+        if (resumePlayback) {
+            engine.setValue(grp, "play", 1);
+            // A NS6 continua transmitindo algumas posições após o touch release.
+            // Reafirma a reprodução depois dessa janela, salvo novo toque no prato.
+            engine.beginTimer(20, function() {
+                if (deck.scratchSequence === releaseSequence && !engine.isScratching(deckNum)) engine.setValue(grp, "play", 1);
+            }, true);
+        }
         deck.wasPlayingBeforeScratch = false;
     }
 };
