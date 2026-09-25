@@ -904,10 +904,10 @@ NumarkNS6.Deck = function(channel) {
 
     this.pflButton = new components.Button({
         midi: [0x90, 0x30+channel, 0xB0, 0x3F+channel], group: groupName, key: "pfl",
-        input: function(_c, _ctrl, val) {
-            // A NS6 envia press/release. Trate apenas o press como seleção de
-            // pré-escuta e mantenha somente um canal ativo por vez.
-            if (val === 0) return;
+        input: function(_c, _ctrl, val, status) {
+            // A NS6 ocasionalmente envia note-off com valor corrompido (0x7D).
+            // Somente Note On 0x90 é um clique válido de pré-escuta.
+            if (status !== 0x90 || val === 0) return;
             var enableSelected = NumarkNS6.activePFLDeck !== channel;
             NumarkNS6.activePFLDeck = enableSelected ? channel : 0;
             for (var deckNum = 1; deckNum <= 4; deckNum++) {
