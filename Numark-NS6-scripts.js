@@ -905,16 +905,17 @@ NumarkNS6.Deck = function(channel) {
     this.pflButton = new components.Button({
         midi: [0x90, 0x30+channel, 0xB0, 0x3F+channel], group: groupName, key: "pfl",
         input: function(_c, _ctrl, val, status) {
-            // A NS6 ocasionalmente envia note-off com valor corrompido (0x7D).
-            // Somente Note On 0x90 é um clique válido de pré-escuta.
-            if (status !== 0x90 || val === 0) return;
-            // Read the engine value instead of relying on activePFLDeck. Engine
-            // connections are delivered asynchronously, so the cached value can
-            // briefly be stale when two presses happen in quick succession.
-            var enableSelected = engine.getValue(groupName, "pfl") <= 0;
-            NumarkNS6.activePFLDeck = enableSelected ? channel : 0;
-            for (var deckNum = 1; deckNum <= 4; deckNum++) {
-                engine.setValue("[Channel" + deckNum + "]", "pfl", (enableSelected && deckNum === channel) ? 1 : 0);
+            // PFL is a latching switch in the NS6 itself. Its LED and button
+            // state are maintained by the hardware: Note On enables it and a
+            // zero-value Note Off disables it. Do not turn this into a toggle.
+            if (status === 0x90 && val > 0) {
+                NumarkNS6.activePFLDeck = channel;
+                for (var deckNum = 1; deckNum <= 4; deckNum++) {
+                    engine.setValue("[Channel" + deckNum + "]", "pfl", deckNum === channel ? 1 : 0);
+                }
+            } else if (status === 0x80 && val === 0) {
+                engine.setValue(groupName, "pfl", 0);
+                if (NumarkNS6.activePFLDeck === channel) NumarkNS6.activePFLDeck = 0;
             }
         }
     });
