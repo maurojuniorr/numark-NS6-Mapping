@@ -908,7 +908,10 @@ NumarkNS6.Deck = function(channel) {
             // A NS6 ocasionalmente envia note-off com valor corrompido (0x7D).
             // Somente Note On 0x90 é um clique válido de pré-escuta.
             if (status !== 0x90 || val === 0) return;
-            var enableSelected = NumarkNS6.activePFLDeck !== channel;
+            // Read the engine value instead of relying on activePFLDeck. Engine
+            // connections are delivered asynchronously, so the cached value can
+            // briefly be stale when two presses happen in quick succession.
+            var enableSelected = engine.getValue(groupName, "pfl") <= 0;
             NumarkNS6.activePFLDeck = enableSelected ? channel : 0;
             for (var deckNum = 1; deckNum <= 4; deckNum++) {
                 engine.setValue("[Channel" + deckNum + "]", "pfl", (enableSelected && deckNum === channel) ? 1 : 0);
