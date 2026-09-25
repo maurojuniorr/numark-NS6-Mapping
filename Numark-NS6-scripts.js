@@ -394,34 +394,12 @@ NumarkNS6.init = function () {
     NumarkNS6.FX.init();
     NumarkNS6.FX.initRouting(); 
 
- // ⚡ INJEÇÃO VIA CONEXÃO NATIVA
-    // Criamos um "link direto" entre a Skin e a lógica da controladora
-    engine.makeConnection("[Skin]", "layer_left", function(value) {
-        NumarkNS6.leftDeck = (value === 1) ? 3 : 1;
-        if (NumarkNS6.Mixer && NumarkNS6.Mixer.deckChangeL) {
-            NumarkNS6.Mixer.deckChangeL.output(value);
-        }
-        print("Injeção Layer Esq: Deck " + NumarkNS6.leftDeck);
-    });
-
-    engine.makeConnection("[Skin]", "layer_right", function(value) {
-        NumarkNS6.rightDeck = (value === 1) ? 4 : 2;
-        if (NumarkNS6.Mixer && NumarkNS6.Mixer.deckChangeR) {
-            NumarkNS6.Mixer.deckChangeR.output(value);
-        }
-        print("Injeção Layer Dir: Deck " + NumarkNS6.rightDeck);
-    });
-
-    // 💉 DISPARO DA INJEÇÃO: Força o Mixxx a ler os valores salvos AGORA
-    engine.trigger("[Skin]", "layer_left");
-    engine.trigger("[Skin]", "layer_right");
-
     NumarkNS6.bootAnimation();
     
     // Baixa o escudo após o boot
     NumarkNS6.isBooting = false; 
 
-    print("Numark NS6: Sincronia de Layers restaurada! Esq: Deck " + NumarkNS6.leftDeck + " | Dir: Deck " + NumarkNS6.rightDeck);
+    print("Numark NS6: camadas iniciadas. Esq: Deck " + NumarkNS6.leftDeck + " | Dir: Deck " + NumarkNS6.rightDeck);
 };
 
 
@@ -488,11 +466,6 @@ NumarkNS6.bootAnimation = function () {
         // 🎯 O GRANDE DESPERTAR (Ajustado para 4 Decks)
         engine.beginTimer(300, function() {
             
-            // 💉 EM VEZ DE ZERAR (0x00), NÓS DISPARAMOS A SINCRONIA DA SKIN!
-            // Isso força o hardware a assumir o que está na tela no final do boot
-            engine.trigger("[Skin]", "layer_left");
-            engine.trigger("[Skin]", "layer_right");
-
             for (var dIdx = 1; dIdx <= 4; dIdx++) {
                 if (!NumarkNS6.Decks[dIdx]) continue;
                 var mc = NumarkNS6.Decks[dIdx].midiChannel;
@@ -528,9 +501,6 @@ this.deckChangeR = new components.Button({
         this.output(value); 
         NumarkNS6.rightDeck = (value > 0) ? 4 : 2; 
         
-        // MÁGICA DO DRIFT: Sincroniza a Skin (1 se for Deck 4, 0 se for Deck 2)
-        engine.setValue("[Skin]", "layer_right", (value > 0) ? 1 : 0);
-
         if (typeof NumarkNS6.updateBpmMeter === "function") NumarkNS6.updateBpmMeter(); 
     } 
 });
@@ -542,9 +512,6 @@ this.deckChangeL = new components.Button({
         this.output(value); 
         NumarkNS6.leftDeck = (value > 0) ? 3 : 1; 
         
-        // MÁGICA DO DRIFT: Sincroniza a Skin (1 se for Deck 3, 0 se for Deck 1)
-        engine.setValue("[Skin]", "layer_left", (value > 0) ? 1 : 0);
-
         if (typeof NumarkNS6.updateBpmMeter === "function") NumarkNS6.updateBpmMeter(); 
     } 
 });
