@@ -99,6 +99,22 @@ NumarkNS6.filtered14Bit = function (group, key, transform) {
     };
 };
 
+// Os knobs de gain também emitem ocasionalmente MSB 0x7D. components.Pot
+// trata esse byte como uma posição válida e eleva o pregain quase ao máximo.
+// Filtramos o byte antes de delegar o restante ao componente nativo do Mixxx.
+NumarkNS6.filteredPot14Bit = function (options) {
+    var pot = new components.Pot(options);
+    pot.inputMSB = function (ch, ctrl, value, status, group) {
+        // Na inicialização, prefira esperar uma leitura normal a aceitar um
+        // 0x7D/0x7F isolado como se o knob estivesse no topo.
+        if (this.MSB === undefined && value >= 124) return;
+        if (this.MSB !== undefined && value >= 124 && this.MSB <= 110) return;
+        if (this.MSB !== undefined && Math.abs(value - this.MSB) > 32) return;
+        components.Pot.prototype.inputMSB.call(this, ch, ctrl, value, status, group);
+    };
+    return pot;
+};
+
 NumarkNS6.crossfader = NumarkNS6.filtered14Bit("[Master]", "crossfader", function (value) { return (value * 2.0) - 1.0; });
 NumarkNS6.crossfaderMSB = function (ch, ctrl, value) { NumarkNS6.crossfader.inputMSB(ch, ctrl, value); };
 NumarkNS6.crossfaderLSB = function (ch, ctrl, value) { NumarkNS6.crossfader.inputLSB(ch, ctrl, value); };
@@ -819,8 +835,9 @@ NumarkNS6.Deck = function(channel) {
             inValueScale: function (v) { return (v > this.max * 0.46997 && v < this.max * 0.50659) ? (v + this.max * 0.015625) / this.max : v / this.max; }
         });
     }
-    this.gainKnob = new components.Pot({
-        midi: [0xB0, 0x2C + 5 * (channel - 1)], shift: function () { this.group = "[QuickEffectRack1_" + theDeck.group + "]"; this.inKey = "super1"; }, unshift: function () { this.group = theDeck.group; this.inKey = "pregain"; }
+    this.gainKnob = NumarkNS6.filteredPot14Bit({
+        midi: [0xB0, 0x2C + 5 * (channel - 1)], group: groupName, inKey: "pregain",
+        shift: function () { this.group = "[QuickEffectRack1_" + theDeck.group + "]"; this.inKey = "super1"; }, unshift: function () { this.group = theDeck.group; this.inKey = "pregain"; }
     });
 
    
