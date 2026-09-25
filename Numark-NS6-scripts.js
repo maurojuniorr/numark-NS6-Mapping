@@ -626,13 +626,16 @@ this.deckChangeL = new components.Button({
         }
     });
 
-    // 5. Botão PREPARE (0x0D) - Samplers
+    // 5. Botão PREPARE (0x0D) - navegação da biblioteca/AutoDJ
     this.prepareButton = new components.Button({
         midi: [0x90, 0x0D],
         input: function (ch, ctrl, val) {
             if (val > 0) {
                 NumarkNS6.resetTabs();
-                engine.setValue("[Skin]", "show_samplers", 1);
+                engine.setValue("[Skin]", "show_maximized_library", 1);
+                // 2 é a barra lateral: o encoder passa por Tracks, AutoDJ,
+                // Playlists e Crates, e o clique abre o item selecionado.
+                engine.setValue("[Library]", "focused_widget", 2);
             }
         }
     });
