@@ -21,7 +21,7 @@ NumarkNS6.lastTouchStripValue = [null, 0, 0, 0, 0];
 NumarkNS6.deckLoopMode = [null, true, true, true, true];
 NumarkNS6.harmonicSyncActive = [null, false, false, false, false];
 NumarkNS6.isProcessingHarmonic = [null, false, false, false, false];
-NumarkNS6.rateRanges = [0.04, 0.08, 0.16, 0.32, 0.64];
+NumarkNS6.rateRanges = [0.02, 0.04, 0.08, 0.16, 0.32, 0.64];
 // Dicionário de alta velocidade para evitar Regex no Jog Wheel
 NumarkNS6.groupToDeck = { "[Channel1]": 1, "[Channel2]": 2, "[Channel3]": 3, "[Channel4]": 4 };
 
@@ -421,9 +421,9 @@ NumarkNS6.init = function () {
 
     NumarkNS6.Decks = [];
     for (var i = 1; i <= 4; i++) {
-        // The NS6 pitch fader has finite physical resolution. Start at ±4%
+        // The NS6 pitch fader has finite physical resolution. Start at ±2%
         // so each hardware step is fine enough for manual beatmatching; the
-        // RANGE button still exposes ±8%, ±16%, ±32% and ±64% when needed.
+        // RANGE button still exposes ±4%, ±8%, ±16%, ±32% and ±64% when needed.
         engine.setValue("[Channel" + i + "]", "rateRange", NumarkNS6.rateRanges[0]);
         NumarkNS6.Decks[i] = new NumarkNS6.Deck(i);
         (function (dIdx) {
