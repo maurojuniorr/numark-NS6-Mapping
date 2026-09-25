@@ -1019,7 +1019,7 @@ NumarkNS6.Deck = function(channel) {
 // Modo CDJ: tocando, o prato faz pitch-bend; parado, procura na faixa.
 // A NS6 atualiza o prato a cada ~5 ms, por isso o nudge precisa de ganho baixo.
 NumarkNS6.cdjScrubWeight = 4;
-NumarkNS6.cdjNudgeDivisor = 120;
+NumarkNS6.cdjNudgeDivisor = 30;
 NumarkNS6.pitchBendSensitivity = 5; 
 
 NumarkNS6.jogMove14bit = function(ch, ctrl, val, st, grp) {
