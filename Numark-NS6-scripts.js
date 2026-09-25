@@ -38,10 +38,9 @@ NumarkNS6.scratchSettings = { "alpha": 1.0/8, "beta": (1.0/8)/32, "jogResolution
 // não um movimento humano do prato.
 NumarkNS6.maxJogDelta = 768;
 NumarkNS6.pitchBendSensitivity = 5; // Quanto menor, mais rápido ele empurra a batida
-// A NS6 ainda entrega alguns valores de posição depois do note-off do toque.
-// Mantemos o motor de scratch ativo por este curto intervalo para que esses
-// valores façam parte da inércia, em vez de serem interpretados como nudge.
-NumarkNS6.scratchReleaseDelayMs = 40;
+// A NS6 ainda entrega valores de posição depois do note-off do toque. O
+// handoff só ocorre depois deste período sem nenhuma posição válida.
+NumarkNS6.scratchReleaseDelayMs = 60;
 
 // Filtro de ruído do fader de volume do deck 2.
 // A captura MIDI mostrou pulsos isolados 124..127 durante movimentos suaves.
@@ -1048,6 +1047,12 @@ NumarkNS6.jogMove14bit = function(ch, ctrl, val, st, grp) {
     
     var deck = NumarkNS6.Decks[deckNum];
     if (!deck) return;
+
+    // O note-off do sensor chega antes de a roda parar. Enquanto houver
+    // movimento válido, mantenha o motor de scratch e adie o handoff.
+    if (!deck.jogTouched && deck.scratchReleaseTimer !== undefined && deck.scratchReleaseTimer !== 0) {
+        NumarkNS6.scheduleScratchHandoff(deckNum, deck, grp);
+    }
     
     // 1. MODO SKIP (Beatjump via Prato - Protegido!)
     if (deck.skipMode) {
@@ -1139,6 +1144,33 @@ NumarkNS6.scratchButtonInput = function (ch, ctrl, val, st, grp) {
     midi.sendShortMsg(0xB0 + deck.midiChannel, 0x12, deck.scratchMode ? 0x7F : 0x00); 
 };
 
+NumarkNS6.scheduleScratchHandoff = function (deckNum, deck, grp) {
+    if (deck.scratchReleaseTimer !== undefined && deck.scratchReleaseTimer !== 0) {
+        engine.stopTimer(deck.scratchReleaseTimer);
+    }
+    deck.scratchReleaseTimer = engine.beginTimer(NumarkNS6.scratchReleaseDelayMs, function () {
+        deck.scratchReleaseTimer = 0;
+        if (deck.jogTouched) return;
+        var resumePlayback = deck.wasPlayingBeforeScratch;
+        print("NS6 handoff disable deck=" + deckNum + " resume=" + (resumePlayback ? 1 : 0) + " play=" + engine.getValue(grp, "play") + " scratch=" + engine.isScratching(deckNum));
+        engine.scratchDisable(deckNum, resumePlayback);
+        deck.wasPlayingBeforeScratch = false;
+        // Alguns handoffs deixam o controle play em zero mesmo com a
+        // rampa solicitada. Só nesse caso restauramos o estado original.
+        if (resumePlayback) {
+            deck.playbackGuardTimer = engine.beginTimer(75, function () {
+                deck.playbackGuardTimer = 0;
+                if (deck.jogTouched) return;
+                print("NS6 handoff guard deck=" + deckNum + " play=" + engine.getValue(grp, "play") + " scratch=" + engine.isScratching(deckNum));
+                if (engine.getValue(grp, "play") === 0) {
+                    print("NS6: restaurando play apos handoff no deck " + deckNum);
+                    engine.setValue(grp, "play", 1);
+                }
+            }, true);
+        }
+    }, true);
+};
+
 NumarkNS6.jogTouch14bit = function (ch, ctrl, val, st, grp) {
     var deckNum = NumarkNS6.groupToDeck[grp];
     var deck = NumarkNS6.Decks[deckNum];
@@ -1162,33 +1194,12 @@ NumarkNS6.jogTouch14bit = function (ch, ctrl, val, st, grp) {
         }
         deck.jogTouched = true;
         deck.wasPlayingBeforeScratch = engine.getValue(grp, "play") > 0;
+        print("NS6 handoff touch deck=" + deckNum + " play=" + (deck.wasPlayingBeforeScratch ? 1 : 0));
         engine.scratchEnable(deckNum, NumarkNS6.scratchSettings.jogResolution, 33.33, NumarkNS6.scratchSettings.alpha, NumarkNS6.scratchSettings.beta);
     } else {
         deck.jogTouched = false;
-        if (deck.scratchReleaseTimer !== undefined && deck.scratchReleaseTimer !== 0) {
-            engine.stopTimer(deck.scratchReleaseTimer);
-        }
-        // O segundo argumento de scratchDisable faz o handoff com rampa. O
-        // atraso absorve o último pacote de posição do prato físico.
-        deck.scratchReleaseTimer = engine.beginTimer(NumarkNS6.scratchReleaseDelayMs, function () {
-            deck.scratchReleaseTimer = 0;
-            if (deck.jogTouched) return;
-            var resumePlayback = deck.wasPlayingBeforeScratch;
-            engine.scratchDisable(deckNum, resumePlayback);
-            deck.wasPlayingBeforeScratch = false;
-            // Alguns handoffs deixam o controle play em zero mesmo com a
-            // rampa solicitada. Só nesse caso restauramos o estado original.
-            if (resumePlayback) {
-                deck.playbackGuardTimer = engine.beginTimer(75, function () {
-                    deck.playbackGuardTimer = 0;
-                    if (deck.jogTouched) return;
-                    if (engine.getValue(grp, "play") === 0) {
-                        print("NS6: restaurando play apos handoff no deck " + deckNum);
-                        engine.setValue(grp, "play", 1);
-                    }
-                }, true);
-            }
-        }, true);
+        print("NS6 handoff release deck=" + deckNum + " play=" + engine.getValue(grp, "play") + " scratch=" + engine.isScratching(deckNum) + " rate=" + engine.getValue(grp, "scratch2"));
+        NumarkNS6.scheduleScratchHandoff(deckNum, deck, grp);
     }
 };
 
