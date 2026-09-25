@@ -381,6 +381,10 @@ NumarkNS6.init = function () {
     engine.makeConnection("[Channel2]", "bpm", NumarkNS6.updateBpmMeter);
     engine.makeConnection("[Channel3]", "bpm", NumarkNS6.updateBpmMeter);
     engine.makeConnection("[Channel4]", "bpm", NumarkNS6.updateBpmMeter);
+    engine.makeConnection("[Channel1]", "rate", NumarkNS6.updateBpmMeter);
+    engine.makeConnection("[Channel2]", "rate", NumarkNS6.updateBpmMeter);
+    engine.makeConnection("[Channel3]", "rate", NumarkNS6.updateBpmMeter);
+    engine.makeConnection("[Channel4]", "rate", NumarkNS6.updateBpmMeter);
     
     // Crossfader Connections
     Object.keys(NumarkNS6.scratchXFader).forEach(function (control) {
@@ -1243,6 +1247,11 @@ NumarkNS6.tapButtonInput = function (ch, ctrl, val, st, grp) { if (val === 0) re
 // 🚀 MOTOR DO BPM METER ABSOLUTO (Visão 4 Decks)
 // ==========================================================
 NumarkNS6.lastBpmLed = -1;
+// The pitch fader is 14-bit. At the default ±8% range, one step at 120 BPM
+// is roughly 0.0012 BPM, so the centre LED must use a much tighter window
+// than the former ±0.25 BPM rounding.
+NumarkNS6.bpmMeterCenterTolerance = 0.003;
+NumarkNS6.bpmMeterStep = 0.02;
 
 NumarkNS6.updateBpmMeter = function() {
     if (NumarkNS6.isBooting) return; // 🛡️ Bloqueia durante a animação do Vegas Mode!
@@ -1251,9 +1260,12 @@ NumarkNS6.updateBpmMeter = function() {
     var left = NumarkNS6.leftDeck || 1;
     var right = NumarkNS6.rightDeck || 2;
 
-    // Pega o BPM efetivo (já com o pitch aplicado) dinamicamente
-    var bpm1 = engine.getValue("[Channel" + left + "]", "bpm");
-    var bpm2 = engine.getValue("[Channel" + right + "]", "bpm");
+    // `bpm` is the analysed track BPM. Include the deck rate so the meter
+    // follows the actual audio speed selected by each pitch fader.
+    var leftGroup = "[Channel" + left + "]";
+    var rightGroup = "[Channel" + right + "]";
+    var bpm1 = engine.getValue(leftGroup, "bpm") * (1 + engine.getValue(leftGroup, "rate"));
+    var bpm2 = engine.getValue(rightGroup, "bpm") * (1 + engine.getValue(rightGroup, "rate"));
 
     // Se um dos decks ativos estiver vazio ou parado em 0, desliga o LED
     if (bpm1 <= 0 || bpm2 <= 0) {
@@ -1265,11 +1277,16 @@ NumarkNS6.updateBpmMeter = function() {
     }
 
     var diff = bpm1 - bpm2;
-    var divisor = 0.5; // Sensibilidade: cada LED = 0.5 BPM de diferença
-    
     var center = 6;
-    var ledOffset = Math.round(diff / divisor);
-    var ledValue = center + ledOffset;
+    var ledValue;
+    if (Math.abs(diff) <= NumarkNS6.bpmMeterCenterTolerance) {
+        ledValue = center;
+    } else {
+        // Keep centre exclusive to an effectively equal BPM. Every remaining
+        // position represents 0.02 BPM, with the outer LEDs saturating.
+        var ledOffset = Math.ceil(Math.abs(diff) / NumarkNS6.bpmMeterStep);
+        ledValue = center + (diff > 0 ? ledOffset : -ledOffset);
+    }
 
     // Trava os limites entre o LED 1 (Ponta de baixo) e 11 (Ponta de cima)
     if (ledValue < 1) ledValue = 1;
