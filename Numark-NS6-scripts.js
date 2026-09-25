@@ -898,12 +898,14 @@ NumarkNS6.Deck = function(channel) {
     this.crossfaderAssignRight = new components.Button({ midi: [0x90, 0x34 + (this.deckNum * 2)], group: groupName, input: function (ch, ctrl, val, st, grp) { if (val > 0) engine.setValue(grp, "orientation", 2); else if (engine.getValue(grp, "orientation") === 2) engine.setValue(grp, "orientation", 1); } });
 
     this.pflButton = new components.Button({
-        midi: [0x90, 0x30+channel, 0xB0, 0x3F+channel], key: "pfl", flickerSafetyTimeout: true,
+        midi: [0x90, 0x30+channel, 0xB0, 0x3F+channel], group: groupName, key: "pfl",
         input: function(_c, _ctrl, val) {
-            if (this.flickerSafetyTimeout) {
-                this.flickerSafetyTimeout=false;
-                if (this.inGetParameter()!==(val/0x7F)) this.inSetParameter(val/0x7F);
-                engine.beginTimer(100, () => { this.flickerSafetyTimeout=true; }, true);
+            // A NS6 envia press/release. Trate apenas o press como seleção de
+            // pré-escuta e mantenha somente um canal ativo por vez.
+            if (val === 0) return;
+            var enableSelected = engine.getValue(groupName, "pfl") === 0;
+            for (var deckNum = 1; deckNum <= 4; deckNum++) {
+                engine.setValue("[Channel" + deckNum + "]", "pfl", (enableSelected && deckNum === channel) ? 1 : 0);
             }
         }
     });
