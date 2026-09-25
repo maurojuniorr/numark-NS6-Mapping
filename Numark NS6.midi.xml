@@ -2888,7 +2888,7 @@
         <group>[Channel3]</group>
         <key>NumarkNS6.deck3VolumeLSB</key>
         <status>0xB0</status>
-        <midino>0x32</midino>
+        <midino>0x33</midino>
         <options><script-binding/></options>
         <description>Channel3 Volume LSB</description>
       </control>
@@ -2896,7 +2896,7 @@
         <group>[Channel3]</group>
         <key>NumarkNS6.deck3VolumeMSB</key>
         <status>0xB0</status>
-        <midino>0x12</midino>
+        <midino>0x13</midino>
         <options><script-binding/></options>
         <description>Channel3 Volume MSB</description>
       </control>
