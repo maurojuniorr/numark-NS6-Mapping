@@ -8,6 +8,8 @@ NumarkNS6.animTimer = 0;
 NumarkNS6.parachuteTimer = 0;
 NumarkNS6.blinkTimer = 0;
 NumarkNS6.displayTimer = 0;
+NumarkNS6.navTimer = 0;
+NumarkNS6.crossfaderChanged = false;
 
 NumarkNS6.Decks = [];
 NumarkNS6.jogMSB = [0, 0, 0, 0, 0];
@@ -31,6 +33,40 @@ NumarkNS6.hotcuePageIndexBehavior = true;
 
 NumarkNS6.scratchSettings = { "alpha": 1.0/8, "beta": (1.0/8)/32, "jogResolution": 2048, "vinylSpeed": 33.33 };
 NumarkNS6.pitchBendSensitivity = 5; // Quanto menor, mais rápido ele empurra a batida
+
+// Filtro de ruído do fader de volume do deck 2.
+// A captura MIDI mostrou pulsos isolados 124..127 durante movimentos suaves.
+NumarkNS6.deck2Volume = { msb: 0, lsb: 0, initialized: false };
+NumarkNS6.deck2VolumeWrite = function () {
+    var s = NumarkNS6.deck2Volume;
+    engine.setValue("[Channel2]", "volume", ((s.msb << 7) | s.lsb) / 16383.0);
+};
+NumarkNS6.deck2VolumeMSB = function (ch, ctrl, value) {
+    var s = NumarkNS6.deck2Volume;
+    // Pulsos de topo isolados são o defeito observado no potenciômetro.
+    if (s.initialized && value >= 124 && s.msb <= 110) return;
+    if (s.initialized && Math.abs(value - s.msb) > 32) return;
+    s.msb = value; s.initialized = true; NumarkNS6.deck2VolumeWrite();
+};
+NumarkNS6.deck2VolumeLSB = function (ch, ctrl, value) {
+    NumarkNS6.deck2Volume.lsb = value;
+    if (NumarkNS6.deck2Volume.initialized) NumarkNS6.deck2VolumeWrite();
+};
+NumarkNS6.deck1Volume = { msb: 0, lsb: 0, initialized: false };
+NumarkNS6.deck1VolumeWrite = function () {
+    var s = NumarkNS6.deck1Volume;
+    engine.setValue("[Channel1]", "volume", ((s.msb << 7) | s.lsb) / 16383.0);
+};
+NumarkNS6.deck1VolumeMSB = function (ch, ctrl, value) {
+    var s = NumarkNS6.deck1Volume;
+    if (s.initialized && value >= 124 && s.msb <= 110) return;
+    if (s.initialized && Math.abs(value - s.msb) > 32) return;
+    s.msb = value; s.initialized = true; NumarkNS6.deck1VolumeWrite();
+};
+NumarkNS6.deck1VolumeLSB = function (ch, ctrl, value) {
+    NumarkNS6.deck1Volume.lsb = value;
+    if (NumarkNS6.deck1Volume.initialized) NumarkNS6.deck1VolumeWrite();
+};
 NumarkNS6.SysExInit1 = [0xF0, 0x00, 0x01, 0x3F, 0x7F, 0x79, 0x50, 0x00, 0x10, 0x04, 0x01, 0x00, 0x00, 0x00, 0x04, 0x04, 0x0E, 0x0F, 0x00, 0x00, 0x0E, 0x05, 0x0F, 0x04, 0x0C, 0x06, 0x0B, 0x0F, 0x0D, 0x0C, 0xF7];
 NumarkNS6.SysExInit2 = [0xF0, 0x00, 0x01, 0x3F, 0x7F, 0x79, 0x60, 0x00, 0x01, 0x49, 0x01, 0x00, 0x00, 0x00, 0x00, 0xF7];
 
@@ -241,7 +277,7 @@ components.Component.prototype.send = function (value) {
 
 NumarkNS6.storedCrossfaderParams = {};
 NumarkNS6.crossfaderCallbackConnections = [];
-NumarkNS6.CrossfaderChangeCallback = function (value, group, control) { this.changed = true; NumarkNS6.storedCrossfaderParams[control] = value; };
+NumarkNS6.CrossfaderChangeCallback = function (value, group, control) { NumarkNS6.crossfaderChanged = true; NumarkNS6.storedCrossfaderParams[control] = value; };
 
 
 // =======================================================
@@ -607,7 +643,7 @@ this.deckChangeL = new components.Button({
         midi.sendShortMsg(0xB0, 0x03, (isLib && isSide && !isSamp) ? 0x7F : 0x00);
         midi.sendShortMsg(0xB0, 0x04, isSamp ? 0x7F : 0x00);
     };
-    engine.beginTimer(250, NumarkNS6.updateNavLEDs);
+    if (NumarkNS6.navTimer === 0) NumarkNS6.navTimer = engine.beginTimer(250, NumarkNS6.updateNavLEDs);
 
 
 
@@ -1013,7 +1049,7 @@ NumarkNS6.jogMove14bit = function(ch, ctrl, val, st, grp) {
     // --------------------------------------------------------
     
     // Se o Sensor de Toque (jogTouch14bit) ligou o motor...
-    if (engine.isScratching(deckNum)) {
+    if (engine.isScratching(deckNum) && !deck.isAutoScrubbing) {
         // ...Nós arrastamos a música! (Modo Scratch)
         engine.scratchTick(deckNum, delta);
     } else {
@@ -1059,8 +1095,16 @@ NumarkNS6.jogTouch14bit = function (ch, ctrl, val, st, grp) {
     //var deckNum = script.deckFromGroup(grp);
     // Substitua var deckNum = script.deckFromGroup(grp); por:
     var deckNum = NumarkNS6.groupToDeck[grp];
-    if (!NumarkNS6.Decks[deckNum]) return;
-    if ((val > 0) && NumarkNS6.Decks[deckNum].scratchMode) engine.scratchEnable(deckNum, NumarkNS6.scratchSettings.jogResolution, 33.33, NumarkNS6.scratchSettings.alpha, NumarkNS6.scratchSettings.beta);
+    var deck = NumarkNS6.Decks[deckNum];
+    if (!deck) return;
+
+    // O toque assume o controle do motor; o timer do scrub não pode desligá-lo.
+    if (deck.scrubTimer !== undefined && deck.scrubTimer !== 0) {
+        engine.stopTimer(deck.scrubTimer);
+        deck.scrubTimer = 0;
+    }
+    deck.isAutoScrubbing = false;
+    if ((val > 0) && deck.scratchMode) engine.scratchEnable(deckNum, NumarkNS6.scratchSettings.jogResolution, 33.33, NumarkNS6.scratchSettings.alpha, NumarkNS6.scratchSettings.beta);
     else engine.scratchDisable(deckNum);
 };
 
@@ -1232,9 +1276,22 @@ NumarkNS6.btnSamplers = function(ch, ctrl, val) { if (val > 0) engine.setValue("
 NumarkNS6.shutdown = function () {
     // 1. Mata todos os timers na hora
     if (NumarkNS6.displayTimer !== 0) engine.stopTimer(NumarkNS6.displayTimer);
+    if (NumarkNS6.navTimer !== 0) engine.stopTimer(NumarkNS6.navTimer);
     if (NumarkNS6.blinkTimer !== 0) engine.stopTimer(NumarkNS6.blinkTimer);
     if (NumarkNS6.animTimer !== 0) engine.stopTimer(NumarkNS6.animTimer);
     if (NumarkNS6.parachuteTimer !== 0) engine.stopTimer(NumarkNS6.parachuteTimer);
+
+    // Libera os motores dos pratos e cancela os timers de scrub de cada deck.
+    for (var deckNum = 1; deckNum <= 4; deckNum++) {
+        var deck = NumarkNS6.Decks[deckNum];
+        if (!deck) continue;
+        if (deck.scrubTimer !== undefined && deck.scrubTimer !== 0) {
+            engine.stopTimer(deck.scrubTimer);
+            deck.scrubTimer = 0;
+        }
+        deck.isAutoScrubbing = false;
+        engine.scratchDisable(deckNum);
+    }
 
     // 2. Apaga luzes mecânicas varrendo a placa inteira
     for (var i = 0; i <= 4; i++) {
@@ -1245,7 +1302,7 @@ NumarkNS6.shutdown = function () {
     midi.sendShortMsg(0x80, 0x33, 0x00); midi.sendShortMsg(0x80, 0x34, 0x00); 
 
     // 3. Devolve a curva original de Crossfader ao Mixxx
-    if (!NumarkNS6.CrossfaderChangeCallback.changed || (NumarkNS6.Mixer && NumarkNS6.Mixer.changeCrossfaderContour && NumarkNS6.Mixer.changeCrossfaderContour.state)) {
+    if (!NumarkNS6.crossfaderChanged || (NumarkNS6.Mixer && NumarkNS6.Mixer.changeCrossfaderContour && NumarkNS6.Mixer.changeCrossfaderContour.state)) {
         Object.keys(NumarkNS6.storedCrossfaderParams).forEach(function (ctrl) { engine.setValue("[Mixer Profile]", ctrl, NumarkNS6.storedCrossfaderParams[ctrl]); });
     }
 

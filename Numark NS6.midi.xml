@@ -13,6 +13,7 @@
       <file filename="midi-components-0.0.js"/>
       <file functionprefix="NumarkNS6" filename="Numark-NS6-scripts.js"/>
     </scriptfiles>
+    <init-function>NumarkNS6.init</init-function>
     <shutdown-function>NumarkNS6.shutdown</shutdown-function>
     <controls>
       <control>
@@ -2845,46 +2846,34 @@
       <!--volume slider-->
       <control>
         <group>[Channel1]</group>
-        <key>volume</key>
+        <key>NumarkNS6.deck1VolumeLSB</key>
         <status>0xB0</status>
         <midino>0x28</midino>
-        <options>
-          <fourteen-bit-lsb/>
-          <Soft-takeover/>
-        </options>
+        <options><script-binding/></options>
         <description>Channel1 Volume LSB</description>
       </control>
       <control>
         <group>[Channel1]</group>
-        <key>volume</key>
+        <key>NumarkNS6.deck1VolumeMSB</key>
         <status>0xB0</status>
         <midino>0x08</midino>
-        <options>
-          <fourteen-bit-msb/>
-          <Soft-takeover/>
-        </options>
+        <options><script-binding/></options>
         <description>Channel1 Volume MSB</description>
       </control>
       <control>
         <group>[Channel2]</group>
-        <key>volume</key>
+        <key>NumarkNS6.deck2VolumeLSB</key>
         <status>0xB0</status>
         <midino>0x2D</midino>
-        <options>
-          <fourteen-bit-lsb/>
-          <Soft-takeover/>
-        </options>
+        <options><script-binding/></options>
         <description>Channel2 Volume LSB</description>
       </control>
       <control>
         <group>[Channel2]</group>
-        <key>volume</key>
+        <key>NumarkNS6.deck2VolumeMSB</key>
         <status>0xB0</status>
         <midino>0x0D</midino>
-        <options>
-          <fourteen-bit-msb/>
-          <Soft-takeover/>
-        </options>
+        <options><script-binding/></options>
         <description>Channel2 Volume MSB</description>
       </control>
       <control>
@@ -2902,7 +2891,7 @@
         <group>[Channel3]</group>
         <key>volume</key>
         <status>0xB0</status>
-        <midino>0x13</midino>
+        <midino>0x12</midino>
         <options>
           <fourteen-bit-msb/>
           <Soft-takeover/>
