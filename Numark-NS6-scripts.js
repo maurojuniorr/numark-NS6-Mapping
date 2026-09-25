@@ -38,6 +38,10 @@ NumarkNS6.scratchSettings = { "alpha": 1.0/8, "beta": (1.0/8)/32, "jogResolution
 // não um movimento humano do prato.
 NumarkNS6.maxJogDelta = 768;
 NumarkNS6.pitchBendSensitivity = 5; // Quanto menor, mais rápido ele empurra a batida
+// A NS6 ainda entrega alguns valores de posição depois do note-off do toque.
+// Mantemos o motor de scratch ativo por este curto intervalo para que esses
+// valores façam parte da inércia, em vez de serem interpretados como nudge.
+NumarkNS6.scratchReleaseDelayMs = 40;
 
 // Filtro de ruído do fader de volume do deck 2.
 // A captura MIDI mostrou pulsos isolados 124..127 durante movimentos suaves.
@@ -863,6 +867,10 @@ NumarkNS6.Deck = function(channel) {
                     engine.stopTimer(deck.scrubTimer);
                     deck.scrubTimer = 0;
                 }
+                if (deck.scratchReleaseTimer !== undefined && deck.scratchReleaseTimer !== 0) {
+                    engine.stopTimer(deck.scratchReleaseTimer);
+                    deck.scratchReleaseTimer = 0;
+                }
                 if (deck.isAutoScrubbing) {
                     engine.scratchDisable(deckNum);
                     deck.isAutoScrubbing = false;
@@ -1140,13 +1148,26 @@ NumarkNS6.jogTouch14bit = function (ch, ctrl, val, st, grp) {
     deck.isAutoScrubbing = false;
 
     if ((val > 0) && deck.scratchMode) {
+        if (deck.scratchReleaseTimer !== undefined && deck.scratchReleaseTimer !== 0) {
+            engine.stopTimer(deck.scratchReleaseTimer);
+            deck.scratchReleaseTimer = 0;
+        }
+        deck.jogTouched = true;
         deck.wasPlayingBeforeScratch = engine.getValue(grp, "play") > 0;
         engine.scratchEnable(deckNum, NumarkNS6.scratchSettings.jogResolution, 33.33, NumarkNS6.scratchSettings.alpha, NumarkNS6.scratchSettings.beta);
     } else {
-        // O segundo argumento de scratchDisable é o handoff com rampa. É o
-        // caminho recomendado pelo Mixxx ao soltar um scratch com o deck tocando.
-        engine.scratchDisable(deckNum, deck.wasPlayingBeforeScratch);
-        deck.wasPlayingBeforeScratch = false;
+        deck.jogTouched = false;
+        if (deck.scratchReleaseTimer !== undefined && deck.scratchReleaseTimer !== 0) {
+            engine.stopTimer(deck.scratchReleaseTimer);
+        }
+        // O segundo argumento de scratchDisable faz o handoff com rampa. O
+        // atraso absorve o último pacote de posição do prato físico.
+        deck.scratchReleaseTimer = engine.beginTimer(NumarkNS6.scratchReleaseDelayMs, function () {
+            deck.scratchReleaseTimer = 0;
+            if (deck.jogTouched) return;
+            engine.scratchDisable(deckNum, deck.wasPlayingBeforeScratch);
+            deck.wasPlayingBeforeScratch = false;
+        }, true);
     }
 };
 
@@ -1328,6 +1349,10 @@ NumarkNS6.shutdown = function () {
         if (deck.scrubTimer !== undefined && deck.scrubTimer !== 0) {
             engine.stopTimer(deck.scrubTimer);
             deck.scrubTimer = 0;
+        }
+        if (deck.scratchReleaseTimer !== undefined && deck.scratchReleaseTimer !== 0) {
+            engine.stopTimer(deck.scratchReleaseTimer);
+            deck.scratchReleaseTimer = 0;
         }
         deck.isAutoScrubbing = false;
         engine.scratchDisable(deckNum);
