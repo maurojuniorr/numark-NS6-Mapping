@@ -393,6 +393,10 @@ NumarkNS6.init = function () {
 
     NumarkNS6.Decks = [];
     for (var i = 1; i <= 4; i++) {
+        // The NS6 pitch fader has finite physical resolution. Start at ±4%
+        // so each hardware step is fine enough for manual beatmatching; the
+        // RANGE button still exposes ±8%, ±16%, ±32% and ±64% when needed.
+        engine.setValue("[Channel" + i + "]", "rateRange", NumarkNS6.rateRanges[0]);
         NumarkNS6.Decks[i] = new NumarkNS6.Deck(i);
         (function (dIdx) {
             var g = "[Channel" + dIdx + "]";
