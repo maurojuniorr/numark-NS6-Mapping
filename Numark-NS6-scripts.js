@@ -1197,6 +1197,10 @@ NumarkNS6.jogTouch14bit = function (ch, ctrl, val, st, grp) {
         print("NS6 handoff touch deck=" + deckNum + " play=" + (deck.wasPlayingBeforeScratch ? 1 : 0));
         engine.scratchEnable(deckNum, NumarkNS6.scratchSettings.jogResolution, 33.33, NumarkNS6.scratchSettings.alpha, NumarkNS6.scratchSettings.beta);
     } else {
+        // A NS6 ocasionalmente transmite um note-off adicional sem o
+        // correspondente note-on. Nunca deixe esse evento solto encerrar um
+        // motor de scratch ou mudar o estado de reprodução do deck.
+        if (!deck.jogTouched) return;
         deck.jogTouched = false;
         print("NS6 handoff release deck=" + deckNum + " play=" + engine.getValue(grp, "play") + " scratch=" + engine.isScratching(deckNum) + " rate=" + engine.getValue(grp, "scratch2"));
         NumarkNS6.scheduleScratchHandoff(deckNum, deck, grp);
