@@ -31,8 +31,9 @@ NumarkNS6.resetHotCuePageOnTrackLoad = true;
 NumarkNS6.cueReverseRoll = true; 
 NumarkNS6.hotcuePageIndexBehavior = true;
 
-// A NS6 reporta a posição do prato em 14 bits completos: 16.384 passos/volta.
-NumarkNS6.scratchSettings = { "alpha": 1.0/8, "beta": (1.0/8)/32, "jogResolution": 16384, "vinylSpeed": 33.33 };
+// A NS6 envia posição em 14 bits, mas o Mixxx fica natural para scratch
+// com uma relação virtual de 2.048 ticks por volta física.
+NumarkNS6.scratchSettings = { "alpha": 1.0/8, "beta": (1.0/8)/32, "jogResolution": 2048, "vinylSpeed": 33.33 };
 // Em 5 ms, 768 passos equivalem a mais de 560 RPM. Acima disso é ruído USB,
 // não um movimento humano do prato.
 NumarkNS6.maxJogDelta = 768;
