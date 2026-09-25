@@ -931,7 +931,7 @@
       </control>
       <control>
         <group>[EffectRack1_EffectUnit1]</group>
-        <key>NumarkNS6.FX.mixLeft.input</key>
+        <key>NumarkNS6.FXMixLeftMSB</key>
         <status>0xB0</status>
         <midino>0x57</midino>
         <options>
@@ -940,13 +940,27 @@
       </control>
 
       <control>
+        <group>[EffectRack1_EffectUnit1]</group>
+        <key>NumarkNS6.FXMixLeftLSB</key>
+        <status>0xB0</status>
+        <midino>0x77</midino>
+        <options><script-binding/></options>
+      </control>
+      <control>
         <group>[EffectRack1_EffectUnit2]</group>
-        <key>NumarkNS6.FX.mixRight.input</key>
+        <key>NumarkNS6.FXMixRightMSB</key>
         <status>0xB0</status>
         <midino>0x59</midino>
         <options>
           <script-binding/>
         </options>
+      </control>
+      <control>
+        <group>[EffectRack1_EffectUnit2]</group>
+        <key>NumarkNS6.FXMixRightLSB</key>
+        <status>0xB0</status>
+        <midino>0x79</midino>
+        <options><script-binding/></options>
       </control>
       <control>
         <group>[EffectRack1_EffectUnit1_Effect1]</group>
@@ -2502,23 +2516,17 @@
       </control>
       <control>
         <group>[Master]</group>
-        <key>crossfader</key>
+        <key>NumarkNS6.crossfaderMSB</key>
         <status>0xB0</status>
         <midino>0x07</midino>
-        <options>
-          <fourteen-bit-msb/>
-          <Soft-takeover/>
-        </options>
+        <options><script-binding/></options>
       </control>
       <control>
         <group>[Master]</group>
-        <key>crossfader</key>
+        <key>NumarkNS6.crossfaderLSB</key>
         <status>0xB0</status>
         <midino>0x27</midino>
-        <options>
-          <fourteen-bit-lsb/>
-          <Soft-takeover/>
-        </options>
+        <options><script-binding/></options>
       </control>
       <!--mixer knobs-->
       <control>

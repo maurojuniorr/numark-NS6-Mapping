@@ -67,6 +67,39 @@ NumarkNS6.deck1VolumeLSB = function (ch, ctrl, value) {
     NumarkNS6.deck1Volume.lsb = value;
     if (NumarkNS6.deck1Volume.initialized) NumarkNS6.deck1VolumeWrite();
 };
+
+// Os faders e knobs da NS6 são 14-bit. Alguns enviam picos isolados perto
+// de 127; o filtro preserva movimentos normais e descarta apenas esses saltos.
+NumarkNS6.filtered14Bit = function (group, key, transform) {
+    return {
+        msb: 0, lsb: 0, initialized: false,
+        write: function () {
+            var value = ((this.msb << 7) | this.lsb) / 16383.0;
+            engine.setValue(group, key, transform ? transform(value) : value);
+        },
+        inputMSB: function (ch, ctrl, value) {
+            if (this.initialized && value >= 124 && this.msb <= 110) return;
+            if (this.initialized && Math.abs(value - this.msb) > 32) return;
+            this.msb = value;
+            this.initialized = true;
+            this.write();
+        },
+        inputLSB: function (ch, ctrl, value) {
+            this.lsb = value;
+            if (this.initialized) this.write();
+        }
+    };
+};
+
+NumarkNS6.crossfader = NumarkNS6.filtered14Bit("[Master]", "crossfader", function (value) { return (value * 2.0) - 1.0; });
+NumarkNS6.crossfaderMSB = function (ch, ctrl, value) { NumarkNS6.crossfader.inputMSB(ch, ctrl, value); };
+NumarkNS6.crossfaderLSB = function (ch, ctrl, value) { NumarkNS6.crossfader.inputLSB(ch, ctrl, value); };
+NumarkNS6.FXMixLeft = NumarkNS6.filtered14Bit("[EffectRack1_EffectUnit1]", "mix");
+NumarkNS6.FXMixRight = NumarkNS6.filtered14Bit("[EffectRack1_EffectUnit2]", "mix");
+NumarkNS6.FXMixLeftMSB = function (ch, ctrl, value) { NumarkNS6.FXMixLeft.inputMSB(ch, ctrl, value); };
+NumarkNS6.FXMixLeftLSB = function (ch, ctrl, value) { NumarkNS6.FXMixLeft.inputLSB(ch, ctrl, value); };
+NumarkNS6.FXMixRightMSB = function (ch, ctrl, value) { NumarkNS6.FXMixRight.inputMSB(ch, ctrl, value); };
+NumarkNS6.FXMixRightLSB = function (ch, ctrl, value) { NumarkNS6.FXMixRight.inputLSB(ch, ctrl, value); };
 NumarkNS6.SysExInit1 = [0xF0, 0x00, 0x01, 0x3F, 0x7F, 0x79, 0x50, 0x00, 0x10, 0x04, 0x01, 0x00, 0x00, 0x00, 0x04, 0x04, 0x0E, 0x0F, 0x00, 0x00, 0x0E, 0x05, 0x0F, 0x04, 0x0C, 0x06, 0x0B, 0x0F, 0x0D, 0x0C, 0xF7];
 NumarkNS6.SysExInit2 = [0xF0, 0x00, 0x01, 0x3F, 0x7F, 0x79, 0x60, 0x00, 0x01, 0x49, 0x01, 0x00, 0x00, 0x00, 0x00, 0xF7];
 
@@ -1230,8 +1263,6 @@ NumarkNS6.FX.updateLEDs = function() {
 NumarkNS6.FX.init = function() {
     NumarkNS6.FX.toggleLeft = new components.Button({ midi: [0x90, 0x2D], input: function (ch, ctrl, val) { if (val > 0) { var t = "[EffectRack1_EffectUnit1_Effect" + ((NumarkNS6.Decks[1].shiftButton.state || NumarkNS6.Decks[3].shiftButton.state) ? "2" : "1") + "]"; engine.setValue(t, "enabled", !engine.getValue(t, "enabled")); } } });
     NumarkNS6.FX.toggleRight = new components.Button({ midi: [0x90, 0x2F], input: function (ch, ctrl, val) { if (val > 0) { var t = "[EffectRack1_EffectUnit2_Effect" + ((NumarkNS6.Decks[2].shiftButton.state || NumarkNS6.Decks[4].shiftButton.state) ? "2" : "1") + "]"; engine.setValue(t, "enabled", !engine.getValue(t, "enabled")); } } });
-    NumarkNS6.FX.mixLeft = new components.Pot({ midi: [0xB0, 0x57], group: "[EffectRack1_EffectUnit1]", key: "mix" });
-    NumarkNS6.FX.mixRight = new components.Pot({ midi: [0xB0, 0x59], group: "[EffectRack1_EffectUnit2]", key: "mix" });
     NumarkNS6.FX.selectLeft = new components.Button({ midi: [0xB0, 0x56], group: "[EffectRack1_EffectUnit1_Effect1]", input: function(ch, ctrl, val) { var t = "[EffectRack1_EffectUnit1_Effect" + ((NumarkNS6.Decks[1].shiftButton.state || NumarkNS6.Decks[3].shiftButton.state) ? "2" : "1") + "]"; engine.setValue(t, "meta", Math.max(0, Math.min(1, engine.getValue(t, "meta") + ((val === 0x01 || val < 64) ? 0.05 : -0.05)))); } });
     NumarkNS6.FX.selectRight = new components.Button({ midi: [0xB0, 0x58], group: "[EffectRack1_EffectUnit2_Effect1]", input: function(ch, ctrl, val) { var t = "[EffectRack1_EffectUnit2_Effect" + ((NumarkNS6.Decks[2].shiftButton.state || NumarkNS6.Decks[4].shiftButton.state) ? "2" : "1") + "]"; engine.setValue(t, "meta", Math.max(0, Math.min(1, engine.getValue(t, "meta") + ((val === 0x01 || val < 64) ? 0.05 : -0.05)))); } });
     NumarkNS6.FX.encoderLeft = new components.Button({ midi: [0xB0, 0x5A], group: "[EffectRack1_EffectUnit1_Effect1]", input: function(ch, ctrl, val) { var t = "[EffectRack1_EffectUnit1_Effect" + ((NumarkNS6.Decks[1].shiftButton.state || NumarkNS6.Decks[3].shiftButton.state) ? "2" : "1") + "]"; engine.setValue(t, "effect_selector", (val === 0x01 || val < 64) ? 1 : -1); } });
