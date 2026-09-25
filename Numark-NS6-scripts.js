@@ -1003,7 +1003,14 @@ NumarkNS6.Deck = function(channel) {
     this.keylockButton = new components.Button({ midi: [0x90+channel, 0x1B, 0xB0+channel, 0x10], type: components.Button.prototype.types.toggle, shift: function() { this.inKey="sync_key"; this.outKey="sync_key"; }, unshift: function() { this.inKey="keylock"; this.outKey="keylock"; } });
     this.bpmSlider = NumarkNS6.precisePitch14Bit(theDeck.group);
     
-    this.pitchLedHandler = engine.makeConnection(this.group, "rate", function(val) { if(!NumarkNS6.isBooting) midi.sendShortMsg(0xB0+channel, 0x37, val===0 ? 0x7F : 0x00); }.bind(this));
+    this.pitchLedHandler = engine.makeConnection(this.group, "rate", function(val) {
+        // A centred 14-bit fader does not always produce binary zero (the
+        // midpoint is 8192/16383). Treat a tiny ±0.01% window as centre so
+        // the pitch-lock LED reflects the physical detent reliably.
+        if (!NumarkNS6.isBooting) {
+            midi.sendShortMsg(0xB0 + channel, 0x37, Math.abs(val) <= 0.0001 ? 0x7F : 0x00);
+        }
+    }.bind(this));
     if (this.pitchLedHandler) {
         this.pitchLedHandler.trigger();
     }
