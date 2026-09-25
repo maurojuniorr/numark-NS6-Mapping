@@ -141,10 +141,38 @@ NumarkNS6.precisePitch14Bit = function (group) {
     return {
         msb: 0,
         lsb: 0,
+        targetRaw: 0,
+        currentRaw: null,
+        slewTimer: 0,
         initialized: false,
-        write: function () {
-            var raw = (this.msb << 7) | this.lsb;
+        write: function (raw) {
             engine.setParameter(group, "rate", 1.0 - (raw / 16383.0));
+        },
+        updateTarget: function () {
+            this.targetRaw = (this.msb << 7) | this.lsb;
+            if (this.currentRaw === null) {
+                this.currentRaw = this.targetRaw;
+                this.write(this.currentRaw);
+                return;
+            }
+            if (this.slewTimer === 0) {
+                var self = this;
+                this.slewTimer = engine.beginTimer(1, function () {
+                    var delta = self.targetRaw - self.currentRaw;
+                    if (Math.abs(delta) <= 1) {
+                        self.currentRaw = self.targetRaw;
+                        self.write(self.currentRaw);
+                        engine.stopTimer(self.slewTimer);
+                        self.slewTimer = 0;
+                        return;
+                    }
+                    // Interpolate hardware packets that arrive about every
+                    // 5 ms. This preserves every 14-bit endpoint while
+                    // avoiding visible 0.03-BPM jumps between reports.
+                    self.currentRaw += Math.round(delta * 0.4);
+                    self.write(self.currentRaw);
+                }, false);
+            }
         },
         inputMSB: function (ch, ctrl, value) {
             // The NS6 can inject an isolated 0x7D/0x7F MSB. Never turn that
@@ -154,11 +182,11 @@ NumarkNS6.precisePitch14Bit = function (group) {
             if (this.initialized && Math.abs(value - this.msb) > 32) return;
             this.msb = value;
             this.initialized = true;
-            this.write();
+            this.updateTarget();
         },
         inputLSB: function (ch, ctrl, value) {
             this.lsb = value;
-            if (this.initialized) this.write();
+            if (this.initialized) this.updateTarget();
         }
     };
 };
