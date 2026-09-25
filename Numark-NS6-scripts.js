@@ -1311,7 +1311,6 @@ NumarkNS6.lastBpmLed = -1;
 // `bpm` is already the effective, rate-adjusted BPM in Mixxx. Keep the
 // centre precise without making it impossible to hit with a 14-bit fader.
 NumarkNS6.bpmMeterCenterTolerance = 0.01;
-NumarkNS6.bpmMeterStep = 0.10;
 
 NumarkNS6.updateBpmMeter = function() {
     if (NumarkNS6.isBooting) return; // 🛡️ Bloqueia durante a animação do Vegas Mode!
@@ -1343,9 +1342,16 @@ NumarkNS6.updateBpmMeter = function() {
     if (Math.abs(diff) <= NumarkNS6.bpmMeterCenterTolerance) {
         ledValue = center;
     } else {
-        // Keep centre exclusive to an effectively equal BPM. Every remaining
-        // position represents 0.05 BPM, with the outer LEDs saturating.
-        var ledOffset = Math.ceil(Math.abs(diff) / NumarkNS6.bpmMeterStep);
+        // Scale the five LEDs on each side to the active pitch range instead
+        // of a fixed ±0.5 BPM. At ±4% and 128 BPM, each step is about 1 BPM
+        // and the far LED is reached only near the end of the pitch fader.
+        var pitchRange = Math.max(
+            engine.getValue(leftGroup, "rateRange"),
+            engine.getValue(rightGroup, "rateRange"),
+            0.04
+        );
+        var meterStep = (Math.max(bpm1, bpm2) * pitchRange) / 5;
+        var ledOffset = Math.ceil(Math.abs(diff) / meterStep);
         ledValue = center + (diff > 0 ? ledOffset : -ledOffset);
     }
 
