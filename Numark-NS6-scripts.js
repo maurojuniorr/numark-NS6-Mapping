@@ -1039,14 +1039,11 @@ NumarkNS6.Deck = function(channel) {
     this.bpmSlider = NumarkNS6.precisePitch14Bit(theDeck.group);
     
     this.pitchLedHandler = engine.makeConnection(this.group, "rate", function(val) {
-        // The three LEDs alongside the fader are pitch down, 0%, and pitch
-        // up. A centred 14-bit fader does not always produce binary zero
-        // (the midpoint is 8192/16383), so retain a small centre window.
+        // A centred 14-bit fader does not always produce binary zero (the
+        // midpoint is 8192/16383). Treat a tiny ±0.02% window as centre so
+        // the pitch-lock LED reflects the physical detent reliably.
         if (!NumarkNS6.isBooting) {
-            var atCenter = Math.abs(val) <= 0.0002;
-            midi.sendShortMsg(0xB0 + channel, 0x36, !atCenter && val < 0 ? 0x7F : 0x00);
-            midi.sendShortMsg(0xB0 + channel, 0x37, atCenter ? 0x7F : 0x00);
-            midi.sendShortMsg(0xB0 + channel, 0x38, !atCenter && val > 0 ? 0x7F : 0x00);
+            midi.sendShortMsg(0xB0 + channel, 0x37, Math.abs(val) <= 0.0002 ? 0x7F : 0x00);
         }
     }.bind(this));
     if (this.pitchLedHandler) {
@@ -1066,9 +1063,7 @@ NumarkNS6.Deck = function(channel) {
      this.reconnectComponents(function(c) { if (c.group === undefined || c.group === "") c.group = groupName; });
     this.shutdown = function() {
         this.pitchLedHandler.disconnect();
-        midi.sendShortMsg(0xB0+channel, 0x36, 0);
-        midi.sendShortMsg(0xB0+channel, 0x37, 0);
-        midi.sendShortMsg(0xB0+channel, 0x38, 0);
+        midi.sendShortMsg(0xB0+channel, 0x37, 0); 
         this.pitchRange.send(0); this.keylockButton.send(0); this.syncButton.send(0);
         this.pitchBendPlus.send(0); this.pitchBendMinus.send(0); this.cueButton.send(0);
         this.playButton.send(0); this.shiftButton.send(0); 
