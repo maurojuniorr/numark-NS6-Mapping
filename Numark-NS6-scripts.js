@@ -31,7 +31,11 @@ NumarkNS6.resetHotCuePageOnTrackLoad = true;
 NumarkNS6.cueReverseRoll = true; 
 NumarkNS6.hotcuePageIndexBehavior = true;
 
-NumarkNS6.scratchSettings = { "alpha": 1.0/8, "beta": (1.0/8)/32, "jogResolution": 2048, "vinylSpeed": 33.33 };
+// A NS6 reporta a posição do prato em 14 bits completos: 16.384 passos/volta.
+NumarkNS6.scratchSettings = { "alpha": 1.0/8, "beta": (1.0/8)/32, "jogResolution": 16384, "vinylSpeed": 33.33 };
+// Em 5 ms, 768 passos equivalem a mais de 560 RPM. Acima disso é ruído USB,
+// não um movimento humano do prato.
+NumarkNS6.maxJogDelta = 768;
 NumarkNS6.pitchBendSensitivity = 5; // Quanto menor, mais rápido ele empurra a batida
 
 // Filtro de ruído do fader de volume do deck 2.
@@ -1028,8 +1032,11 @@ NumarkNS6.jogMove14bit = function(ch, ctrl, val, st, grp) {
     if (NumarkNS6.lastJogValue[deckNum] === -1) { NumarkNS6.lastJogValue[deckNum] = fullValue; return; }
     
     var delta = fullValue - NumarkNS6.lastJogValue[deckNum];
-    NumarkNS6.lastJogValue[deckNum] = fullValue;
     if (delta > 8192) delta -= 16384; else if (delta < -8192) delta += 16384;
+    // A controladora ocasionalmente intercala 0x7D em MSB/LSB. Não aceite
+    // a amostra até que uma posição fisicamente possível chegue.
+    if (Math.abs(delta) > NumarkNS6.maxJogDelta) return;
+    NumarkNS6.lastJogValue[deckNum] = fullValue;
     
     var deck = NumarkNS6.Decks[deckNum];
     if (!deck) return;
