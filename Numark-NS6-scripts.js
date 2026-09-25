@@ -117,10 +117,10 @@ NumarkNS6.toggleEffects = function(channel, control, value, status, group) {
     // Só executa a ação quando o botão é pressionado (value 127/0x7F), 
     // ignorando quando o botão é solto (value 0)
     if (value === 127) {
-        var currentState = engine.getValue("[Skin]", "show_effects");
+        var currentState = engine.getValue("[Skin]", "show_effectrack");
         
         // Se for 1, vira 0. Se for 0, vira 1.
-        engine.setValue("[Skin]", "show_effects", currentState ? 0 : 1);
+        engine.setValue("[Skin]", "show_effectrack", currentState ? 0 : 1);
     }
 }
 
@@ -589,17 +589,8 @@ this.deckChangeL = new components.Button({
     // =======================================================
     // 1. A Função de Faxina (Limpa tudo para recomeçar do zero)
     NumarkNS6.resetTabs = function() {
-        // Limpa Skin Custom (Abas)
-        engine.setValue("[Tab]", "overview", 0);
-        engine.setValue("[Tab]", "library", 0);
-        engine.setValue("[Tab]", "samplers", 0);
-        engine.setValue("[Sidebar]", "sidebar_visible", 0);
-        
-        // Limpa Skins Padrão (Big Library)
-        // engine.setValue("[Library]", "show_maximized_library", 0);
-        engine.setValue("[Master]", "maximize_library", 0);
-        engine.setValue("[Samplers]", "show_samplers", 0);
-        // engine.setValue("[Library]", "sidebar_visible", 0);
+        engine.setValue("[Skin]", "show_maximized_library", 0);
+        engine.setValue("[Skin]", "show_samplers", 0);
     };
 
     // 2. Botão VIEW (0x01) - Volta para as Waveforms
@@ -607,8 +598,8 @@ this.deckChangeL = new components.Button({
         midi: [0x90, 0x01],
         input: function (ch, ctrl, val) {
             if (val > 0) {
-                NumarkNS6.resetTabs(); // Fecha tudo
-                engine.setValue("[Tab]", "overview", 1); // Volta pro deck na custom
+                NumarkNS6.resetTabs();
+                engine.setValue("[Skin]", "show_waveforms", 1);
             }
         }
     });
@@ -619,14 +610,7 @@ this.deckChangeL = new components.Button({
         input: function (ch, ctrl, val) {
             if (val > 0) {
                 NumarkNS6.resetTabs();
-                // Ativa na Custom
-                engine.setValue("[Tab]", "library", 1);
-                engine.setValue("[Sidebar]", "sidebar_visible", 0);
-                
-                // 🎯 CORREÇÃO: Ativa nas Padrão (Usamos os dois comandos para garantir!)
-                engine.setValue("[Library]", "show_maximized_library", 1);
-                engine.setValue("[Master]", "maximize_library", 1);
-                engine.setValue("[Library]", "sidebar_visible", 0);
+                engine.setValue("[Skin]", "show_maximized_library", 1);
             }
         }
     });
@@ -637,14 +621,7 @@ this.deckChangeL = new components.Button({
         input: function (ch, ctrl, val) {
             if (val > 0) {
                 NumarkNS6.resetTabs();
-                // Ativa na Custom
-                engine.setValue("[Tab]", "library", 1);
-                engine.setValue("[Sidebar]", "sidebar_visible", 1);
-                
-                // 🎯 CORREÇÃO: Ativa nas Padrão
-                engine.setValue("[Library]", "show_maximized_library", 1);
-                engine.setValue("[Master]", "maximize_library", 1);
-                engine.setValue("[Library]", "sidebar_visible", 1);
+                engine.setValue("[Skin]", "show_maximized_library", 1);
             }
         }
     });
@@ -655,8 +632,7 @@ this.deckChangeL = new components.Button({
         input: function (ch, ctrl, val) {
             if (val > 0) {
                 NumarkNS6.resetTabs();
-                engine.setValue("[Tab]", "samplers", 1);
-                engine.setValue("[Samplers]", "show_samplers", 1);
+                engine.setValue("[Skin]", "show_samplers", 1);
             }
         }
     });
@@ -665,11 +641,8 @@ this.deckChangeL = new components.Button({
     // 🚥 MOTOR DE LEDS DA NAVEGAÇÃO
     // =======================================================
     NumarkNS6.updateNavLEDs = function() {
-        // Estes controles existem na skin padrão do Mixxx 2.6. Os controles
-        // [Tab], [Sidebar] e [Skin] usados antes não existem nesta instalação
-        // e produziam milhares de avisos por minuto.
-        var isLib = engine.getValue("[Master]", "maximize_library") > 0;
-        var isSamp = engine.getValue("[Samplers]", "show_samplers") > 0;
+        var isLib = engine.getValue("[Skin]", "show_maximized_library") > 0;
+        var isSamp = engine.getValue("[Skin]", "show_samplers") > 0;
         var isSide = false;
 
         midi.sendShortMsg(0xB0, 0x01, 0x7F); // VIEW sempre ON
@@ -697,9 +670,7 @@ this.deckChangeL = new components.Button({
                 }
                 
                 if (isShifted) {
-                    // MÁGICA NOVA: Shift + Back = Esconder/Mostrar a barra de pastas (Sidebar)
-                    var isVisible = engine.getValue("[Sidebar]", "sidebar_visible");
-                    engine.setValue("[Sidebar]", "sidebar_visible", !isVisible);
+                    engine.setValue("[Library]", "MoveFocusBackward", 1);
                 } else {
                     // FUNÇÃO ORIGINAL: Apenas volta o foco de navegação
                     engine.setValue("[Library]", "MoveFocus", -1);
