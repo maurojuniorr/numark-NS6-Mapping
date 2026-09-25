@@ -871,6 +871,10 @@ NumarkNS6.Deck = function(channel) {
                     engine.stopTimer(deck.scratchReleaseTimer);
                     deck.scratchReleaseTimer = 0;
                 }
+                if (deck.playbackGuardTimer !== undefined && deck.playbackGuardTimer !== 0) {
+                    engine.stopTimer(deck.playbackGuardTimer);
+                    deck.playbackGuardTimer = 0;
+                }
                 if (deck.isAutoScrubbing) {
                     engine.scratchDisable(deckNum);
                     deck.isAutoScrubbing = false;
@@ -1152,6 +1156,10 @@ NumarkNS6.jogTouch14bit = function (ch, ctrl, val, st, grp) {
             engine.stopTimer(deck.scratchReleaseTimer);
             deck.scratchReleaseTimer = 0;
         }
+        if (deck.playbackGuardTimer !== undefined && deck.playbackGuardTimer !== 0) {
+            engine.stopTimer(deck.playbackGuardTimer);
+            deck.playbackGuardTimer = 0;
+        }
         deck.jogTouched = true;
         deck.wasPlayingBeforeScratch = engine.getValue(grp, "play") > 0;
         engine.scratchEnable(deckNum, NumarkNS6.scratchSettings.jogResolution, 33.33, NumarkNS6.scratchSettings.alpha, NumarkNS6.scratchSettings.beta);
@@ -1165,8 +1173,21 @@ NumarkNS6.jogTouch14bit = function (ch, ctrl, val, st, grp) {
         deck.scratchReleaseTimer = engine.beginTimer(NumarkNS6.scratchReleaseDelayMs, function () {
             deck.scratchReleaseTimer = 0;
             if (deck.jogTouched) return;
-            engine.scratchDisable(deckNum, deck.wasPlayingBeforeScratch);
+            var resumePlayback = deck.wasPlayingBeforeScratch;
+            engine.scratchDisable(deckNum, resumePlayback);
             deck.wasPlayingBeforeScratch = false;
+            // Alguns handoffs deixam o controle play em zero mesmo com a
+            // rampa solicitada. Só nesse caso restauramos o estado original.
+            if (resumePlayback) {
+                deck.playbackGuardTimer = engine.beginTimer(75, function () {
+                    deck.playbackGuardTimer = 0;
+                    if (deck.jogTouched) return;
+                    if (engine.getValue(grp, "play") === 0) {
+                        print("NS6: restaurando play apos handoff no deck " + deckNum);
+                        engine.setValue(grp, "play", 1);
+                    }
+                }, true);
+            }
         }, true);
     }
 };
@@ -1353,6 +1374,10 @@ NumarkNS6.shutdown = function () {
         if (deck.scratchReleaseTimer !== undefined && deck.scratchReleaseTimer !== 0) {
             engine.stopTimer(deck.scratchReleaseTimer);
             deck.scratchReleaseTimer = 0;
+        }
+        if (deck.playbackGuardTimer !== undefined && deck.playbackGuardTimer !== 0) {
+            engine.stopTimer(deck.playbackGuardTimer);
+            deck.playbackGuardTimer = 0;
         }
         deck.isAutoScrubbing = false;
         engine.scratchDisable(deckNum);
