@@ -1016,8 +1016,10 @@ NumarkNS6.Deck = function(channel) {
 // 🎛️ PROCESSAMENTO DO JOG (COM ENGRENAGEM PESADA DE CDJ)
 // =======================================================
 
-NumarkNS6.cdjScrubWeight = 10; 
-// Mantemos a sensibilidade original para botões, mas pro prato de 14 bits usaremos 60!
+// Modo CDJ: tocando, o prato faz pitch-bend; parado, procura na faixa.
+// A NS6 atualiza o prato a cada ~5 ms, por isso o nudge precisa de ganho baixo.
+NumarkNS6.cdjScrubWeight = 4;
+NumarkNS6.cdjNudgeDivisor = 240;
 NumarkNS6.pitchBendSensitivity = 5; 
 
 NumarkNS6.jogMove14bit = function(ch, ctrl, val, st, grp) {
@@ -1096,8 +1098,8 @@ NumarkNS6.jogMove14bit = function(ch, ctrl, val, st, grp) {
     } else {
         // Se a mão NÃO está no prato (ou o modo Scratch está desligado)...
         if (engine.getValue(grp, "play") > 0) {
-            // NUDGE: Divisor de 60 devolvido para domar os 14 Bits!
-            engine.setValue(grp, "jog", delta / 60); 
+            // NUDGE de CDJ: suave em movimentos lentos, com força progressiva ao girar rápido.
+            engine.setValue(grp, "jog", delta / NumarkNS6.cdjNudgeDivisor);
         } else {
             // MÚSICA PAUSADA: Scrubbing com o motor CDJ "Timer Sniper"
             if (!deck.isAutoScrubbing) {
