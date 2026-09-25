@@ -268,16 +268,6 @@ NumarkNS6.startTimers = function () {
                     NumarkNS6.updatePlayCueLEDs(i, NumarkNS6.Decks[i].midiChannel);
                     NumarkNS6.updateSyncLED(i, NumarkNS6.Decks[i].midiChannel);
 
-                    /// ⚡ 2. LÓGICA DO TEMPO PISCANTE (BLINDAGEM TOTAL)
-                    var controlName = "time_warning_" + i;
-
-                    // 🛡️ SÓ TENTA ENVIAR SE O CONTROLE EXISTIR NA SKIN
-                    // O getValue retorna 'undefined' ou 'null' se não existir, sem crashar.
-                    if (engine.getValue("[Skin]", controlName) !== undefined) {
-                        var isWarning = engine.getValue(group, "end_of_track") > 0;
-                        var isPlaying = engine.getValue(group, "play") > 0;
-                        engine.setValue("[Skin]", controlName, (isPlaying && isWarning && NumarkNS6.blinkState > 0) ? 1 : 0);
-                    }
                 }
             }
         });
@@ -672,9 +662,12 @@ this.deckChangeL = new components.Button({
     // 🚥 MOTOR DE LEDS DA NAVEGAÇÃO
     // =======================================================
     NumarkNS6.updateNavLEDs = function() {
-        var isLib = (engine.getValue("[Tab]", "library") > 0) || (engine.getValue("[Library]", "show_maximized_library") > 0) || (engine.getValue("[Master]", "maximize_library") > 0);
-        var isSamp = (engine.getValue("[Tab]", "samplers") > 0) || (engine.getValue("[Samplers]", "show_samplers") > 0);
-        var isSide = (engine.getValue("[Sidebar]", "sidebar_visible") > 0) || (engine.getValue("[Library]", "sidebar_visible") > 0);
+        // Estes controles existem na skin padrão do Mixxx 2.6. Os controles
+        // [Tab], [Sidebar] e [Skin] usados antes não existem nesta instalação
+        // e produziam milhares de avisos por minuto.
+        var isLib = engine.getValue("[Master]", "maximize_library") > 0;
+        var isSamp = engine.getValue("[Samplers]", "show_samplers") > 0;
+        var isSide = false;
 
         midi.sendShortMsg(0xB0, 0x01, 0x7F); // VIEW sempre ON
         midi.sendShortMsg(0xB0, 0x05, (isLib && !isSide && !isSamp) ? 0x7F : 0x00);
