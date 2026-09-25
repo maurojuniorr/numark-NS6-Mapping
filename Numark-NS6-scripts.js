@@ -77,6 +77,24 @@ NumarkNS6.deck1VolumeLSB = function (ch, ctrl, value) {
     if (NumarkNS6.deck1Volume.initialized) NumarkNS6.deck1VolumeWrite();
 };
 
+// Channel 3 uses the same direct 14-bit path as channels 1 and 2. Native
+// soft takeover can leave this fader inactive after a layer or track change.
+NumarkNS6.deck3Volume = { msb: 0, lsb: 0, initialized: false };
+NumarkNS6.deck3VolumeWrite = function () {
+    var s = NumarkNS6.deck3Volume;
+    engine.setValue("[Channel3]", "volume", ((s.msb << 7) | s.lsb) / 16383.0);
+};
+NumarkNS6.deck3VolumeMSB = function (ch, ctrl, value) {
+    var s = NumarkNS6.deck3Volume;
+    if (s.initialized && value >= 124 && s.msb <= 110) return;
+    if (s.initialized && Math.abs(value - s.msb) > 32) return;
+    s.msb = value; s.initialized = true; NumarkNS6.deck3VolumeWrite();
+};
+NumarkNS6.deck3VolumeLSB = function (ch, ctrl, value) {
+    NumarkNS6.deck3Volume.lsb = value;
+    if (NumarkNS6.deck3Volume.initialized) NumarkNS6.deck3VolumeWrite();
+};
+
 // Os faders e knobs da NS6 são 14-bit. Alguns enviam picos isolados perto
 // de 127; o filtro preserva movimentos normais e descarta apenas esses saltos.
 NumarkNS6.filtered14Bit = function (group, key, transform) {
@@ -1245,8 +1263,8 @@ NumarkNS6.tapButtonInput = function (ch, ctrl, val, st, grp) { if (val === 0) re
 NumarkNS6.lastBpmLed = -1;
 // `bpm` is already the effective, rate-adjusted BPM in Mixxx. Keep the
 // centre precise without making it impossible to hit with a 14-bit fader.
-NumarkNS6.bpmMeterCenterTolerance = 0.005;
-NumarkNS6.bpmMeterStep = 0.05;
+NumarkNS6.bpmMeterCenterTolerance = 0.01;
+NumarkNS6.bpmMeterStep = 0.10;
 
 NumarkNS6.updateBpmMeter = function() {
     if (NumarkNS6.isBooting) return; // 🛡️ Bloqueia durante a animação do Vegas Mode!

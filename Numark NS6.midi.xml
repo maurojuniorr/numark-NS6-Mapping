@@ -2886,24 +2886,18 @@
       </control>
       <control>
         <group>[Channel3]</group>
-        <key>volume</key>
+        <key>NumarkNS6.deck3VolumeLSB</key>
         <status>0xB0</status>
         <midino>0x32</midino>
-        <options>
-          <fourteen-bit-lsb/>
-          <Soft-takeover/>
-        </options>
+        <options><script-binding/></options>
         <description>Channel3 Volume LSB</description>
       </control>
       <control>
         <group>[Channel3]</group>
-        <key>volume</key>
+        <key>NumarkNS6.deck3VolumeMSB</key>
         <status>0xB0</status>
         <midino>0x12</midino>
-        <options>
-          <fourteen-bit-msb/>
-          <Soft-takeover/>
-        </options>
+        <options><script-binding/></options>
         <description>Channel3 Volume MSB</description>
       </control>
       <control>
