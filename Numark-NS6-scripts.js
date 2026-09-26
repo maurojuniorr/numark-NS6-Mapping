@@ -959,18 +959,12 @@ NumarkNS6.Deck = function(channel) {
 
             if (!deck.cueHeld) return;
             deck.cueHeld = false;
-            if (deck.cueStartedWhilePlaying) {
-                engine.setValue(grp, "cue_gotoandstop", 0);
-            } else {
-                engine.setValue(grp, "cue_default", 0);
-                engine.beginTimer(12, function() {
-                    // Do not interrupt a new CUE hold; otherwise guarantee that
-                    // a released preview is returned to the cue and stopped.
-                    if (!deck.cueHeld && engine.getValue(grp, "play") > 0) {
-                        engine.setValue(grp, "cue_gotoandstop", 1);
-                    }
-                }, true);
-            }
+            if (!deck.cueStartedWhilePlaying) engine.setValue(grp, "cue_default", 0);
+            // A physical Note Off is the authoritative end of a CUE preview.
+            // Trigger the native return-and-stop action every time instead of
+            // relying on cue_default to infer it before a rapid next press.
+            engine.setValue(grp, "cue_gotoandstop", 1);
+            engine.setValue(grp, "cue_gotoandstop", 0);
             deck.cueStartedWhilePlaying = false;
         }
     });
