@@ -9,6 +9,8 @@ NumarkNS6.parachuteTimer = 0;
 NumarkNS6.blinkTimer = 0;
 NumarkNS6.displayTimer = 0;
 NumarkNS6.navTimer = 0;
+NumarkNS6.heartbeatTimer = 0;
+NumarkNS6.bridgeHeartbeat = [0xF0, 0x7D, 0x4E, 0x53, 0x36, 0x48, 0xF7];
 NumarkNS6.crossfaderChanged = false;
 NumarkNS6.activePFLDeck = 0;
 
@@ -486,6 +488,14 @@ NumarkNS6.init = function () {
     NumarkNS6.FX.initRouting(); 
 
     NumarkNS6.bootAnimation();
+    // The bridge uses this private SysEx heartbeat to turn the NS6 LEDs off
+    // if Mixxx exits without invoking this mapping's shutdown callback.
+    if (NumarkNS6.heartbeatTimer === 0) {
+        midi.sendSysexMsg(NumarkNS6.bridgeHeartbeat, NumarkNS6.bridgeHeartbeat.length);
+        NumarkNS6.heartbeatTimer = engine.beginTimer(500, function () {
+            midi.sendSysexMsg(NumarkNS6.bridgeHeartbeat, NumarkNS6.bridgeHeartbeat.length);
+        });
+    }
     
     // Baixa o escudo após o boot
     NumarkNS6.isBooting = false; 
@@ -1514,6 +1524,10 @@ NumarkNS6.shutdown = function () {
     if (NumarkNS6.blinkTimer !== 0) engine.stopTimer(NumarkNS6.blinkTimer);
     if (NumarkNS6.animTimer !== 0) engine.stopTimer(NumarkNS6.animTimer);
     if (NumarkNS6.parachuteTimer !== 0) engine.stopTimer(NumarkNS6.parachuteTimer);
+    if (NumarkNS6.heartbeatTimer !== 0) {
+        engine.stopTimer(NumarkNS6.heartbeatTimer);
+        NumarkNS6.heartbeatTimer = 0;
+    }
 
     // Libera os motores dos pratos e cancela os timers de scrub de cada deck.
     for (var deckNum = 1; deckNum <= 4; deckNum++) {
