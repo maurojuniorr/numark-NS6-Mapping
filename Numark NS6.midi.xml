@@ -1706,6 +1706,35 @@
           <script-binding />
         </options>
       </control>
+      <!-- NS6 occasionally emits a CUE Note Off as 0x8n 0x7D 0x7D. -->
+      <control>
+        <group>[Channel1]</group>
+        <key>NumarkNS6.Decks[1].cueMalformedRelease</key>
+        <status>0x81</status>
+        <midino>0x7D</midino>
+        <options><script-binding /></options>
+      </control>
+      <control>
+        <group>[Channel2]</group>
+        <key>NumarkNS6.Decks[2].cueMalformedRelease</key>
+        <status>0x82</status>
+        <midino>0x7D</midino>
+        <options><script-binding /></options>
+      </control>
+      <control>
+        <group>[Channel3]</group>
+        <key>NumarkNS6.Decks[3].cueMalformedRelease</key>
+        <status>0x83</status>
+        <midino>0x7D</midino>
+        <options><script-binding /></options>
+      </control>
+      <control>
+        <group>[Channel4]</group>
+        <key>NumarkNS6.Decks[4].cueMalformedRelease</key>
+        <status>0x84</status>
+        <midino>0x7D</midino>
+        <options><script-binding /></options>
+      </control>
      
       <control>
         <group>[Mixer Profile]</group>

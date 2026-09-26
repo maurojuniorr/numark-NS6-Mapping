@@ -978,14 +978,31 @@ NumarkNS6.Deck = function(channel) {
 
             engine.setValue(grp, "cue_default", pressed ? 1 : 0);
             if (!pressed) {
-                deck.cuePressed = false;
-                print("NS6 cue raw-release deck=" + theDeck.deckNum + " play=" + engine.getValue(grp, "play"));
-                engine.beginTimer(120, function() {
-                    print("NS6 cue release deck=" + theDeck.deckNum + " settled-play=" + engine.getValue(grp, "play"));
-                }, true);
+                deck.releaseCue(grp, "raw");
             }
         }
     });
+
+    // Some NS6 units intermittently report a CUE Note Off with the correct
+    // channel status but the filler bytes 0x7D 0x7D instead of note 0x10,
+    // velocity 0. The XML routes that signature here. Treat it as a release
+    // only while this deck's CUE is genuinely held, so it cannot affect any
+    // unrelated malformed MIDI report.
+    this.releaseCue = function(grp, source) {
+        if (!theDeck.cuePressed) return;
+        theDeck.cuePressed = false;
+        engine.setValue(grp, "cue_default", 0);
+        print("NS6 cue " + source + "-release deck=" + theDeck.deckNum + " play=" + engine.getValue(grp, "play"));
+        engine.beginTimer(120, function() {
+            print("NS6 cue release deck=" + theDeck.deckNum + " settled-play=" + engine.getValue(grp, "play"));
+        }, true);
+    };
+    this.cueMalformedRelease = function(ch, ctrl, val, st, grp) {
+        if (theDeck.cuePressed) {
+            print("NS6 cue malformed Note Off deck=" + theDeck.deckNum + " bytes=" + ctrl + "/" + val);
+            theDeck.releaseCue(grp, "repaired");
+        }
+    };
 
     this.shiftButton = new components.Button({
         midi: [0x90 + channel, 0x12, 0xB0 + channel, 0x0A], type: components.Button.prototype.types.powerWindow, state: false,
