@@ -819,13 +819,6 @@ NumarkNS6.HotcuesContainer = function (channel) {
             // 2. Estado Inicial: O botão nasce sabendo que é um gatilho de tocar/preview
             inKey: "hotcue_" + i + "_activate", 
 
-            // A NS6 envia Note On e Note Off. Hotcues são comandos de disparo,
-            // portanto somente o pressionamento deve chegar ao motor do Mixxx.
-            // Isso evita uma segunda ativação ao soltar o pad.
-            input: function(ch, ctrl, val, st, grp) {
-                if (val > 0) engine.setValue(grp, this.inKey, 1);
-            },
-            
             // 3. Ao segurar o SHIFT: Troca a função para Apagar e muda a cor pra vermelho
             shift: function() {
                 this.inKey = "hotcue_" + this.number + "_clear"; 
