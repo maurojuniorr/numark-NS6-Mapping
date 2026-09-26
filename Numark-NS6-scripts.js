@@ -577,6 +577,7 @@ NumarkNS6.bootAnimation = function () {
                 NumarkNS6.Decks[dIdx].scratchMode = true;
             }
 
+            NumarkNS6.syncLayerLEDs();
             NumarkNS6.startTimers(); 
             print("Numark NS6: Boot Finalizado. Sincronia de Layers injetada com sucesso!");
         }, true);
@@ -592,6 +593,15 @@ NumarkNS6.bootAnimation = function () {
 NumarkNS6.leftDeck = 1;
 NumarkNS6.rightDeck = 2;
 
+// The layer switches are physical two-state controls.  Do not echo their
+// incoming CC value through components.Button: doing so feeds the NS6's own
+// switch state back into the controller and can leave its LED blinking or
+// latched.  Drive each LED from the selected deck instead.
+NumarkNS6.syncLayerLEDs = function() {
+    midi.sendShortMsg(0xB0, 0x50, NumarkNS6.leftDeck === 3 ? 0x7F : 0x00);
+    midi.sendShortMsg(0xB0, 0x51, NumarkNS6.rightDeck === 4 ? 0x7F : 0x00);
+};
+
 NumarkNS6.MixerTemplate = function() {
     
     // 🎧 Botões de Layer (Deck Change) com rastreamento para o BPM Meter
@@ -599,8 +609,8 @@ NumarkNS6.MixerTemplate = function() {
 this.deckChangeR = new components.Button({ 
     midi: [0xB0, 0x51], 
     input: function(_c, _ctrl, value) { 
-        this.output(value); 
         NumarkNS6.rightDeck = (value > 0) ? 4 : 2; 
+        NumarkNS6.syncLayerLEDs();
         
         if (typeof NumarkNS6.updateBpmMeter === "function") NumarkNS6.updateBpmMeter(); 
     } 
@@ -610,8 +620,8 @@ this.deckChangeR = new components.Button({
 this.deckChangeL = new components.Button({ 
     midi: [0xB0, 0x50], // Verifique se o midino do L é 0x50
     input: function(_c, _ctrl, value) { 
-        this.output(value); 
         NumarkNS6.leftDeck = (value > 0) ? 3 : 1; 
+        NumarkNS6.syncLayerLEDs();
         
         if (typeof NumarkNS6.updateBpmMeter === "function") NumarkNS6.updateBpmMeter(); 
     } 
