@@ -934,14 +934,14 @@ NumarkNS6.Deck = function(channel) {
         } 
     });
     
-    // Use exactly the native Mixxx CUE path used by the on-screen button.
-    // The component forwards the press and release pair unchanged, including
-    // rapid presses, so it cannot turn into a PLAY toggle in our script.
+    // NS6 CUE is a return-and-stop button. Mapping it directly to the native
+    // action prevents a burst of valid press/release pairs from being treated
+    // as momentary playback by cue_default.
     this.cueButton = new components.Button({
         midi: [0x90 + channel, 0x10, 0xB0 + channel, 0x08],
         group: groupName,
         type: components.Button.prototype.types.push,
-        inKey: "cue_default",
+        inKey: "cue_gotoandstop",
         output: function() {}
     });
 
