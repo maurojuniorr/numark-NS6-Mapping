@@ -885,9 +885,6 @@ NumarkNS6.Deck = function(channel) {
     var theDeck = this;
     this.hotcuesContainer = new NumarkNS6.HotcuesContainer(channel);
     this.gridSlipMode = false; this.gridAdjustMode = false; this.skipMode = false; this.scratchMode = true; this.isSearching = false;
-    this.cueButtonDown = false;
-    this.cueMode = null;
-    this.cuePreviewReleasePending = false;
 
     this.eqKnobs = [];
     for (var i = 1; i <= 3; i++) {
@@ -937,47 +934,15 @@ NumarkNS6.Deck = function(channel) {
         } 
     });
     
-    this.cueButton = new components.Button({ 
-        midi: [0x90 + channel, 0x10, 0xB0 + channel, 0x08], group: groupName, output: function() {}, 
-        input: function (ch, ctrl, val, st, grp) {
-            var deck = NumarkNS6.Decks[theDeck.deckNum];
-            if (deck.shiftButton && deck.shiftButton.state) { engine.setValue(grp, "intro_start_activate", val > 0 ? 1 : 0); NumarkNS6.updatePlayCueLEDs(theDeck.deckNum, theDeck.midiChannel); return; }
-            if (val > 0) {
-                // Ignore duplicate Note On messages while the physical button
-                // remains down. This keeps an extra MIDI event from toggling play.
-                if (deck.cueButtonDown) return;
-                deck.cueButtonDown = true;
-
-                // CUE tem dois comportamentos físicos distintos. Durante a
-                // reprodução ele deve voltar ao cue e parar; com o deck parado,
-                // deve tocar apenas enquanto o botão permanece pressionado.
-                // Após soltar um preview, o Mixxx pode ainda reportar play=1 por
-                // alguns milissegundos. Mantemos esse próximo toque como preview
-                // para que toques rápidos nunca virem PLAY.
-                deck.cueMode = (!deck.cuePreviewReleasePending && engine.getValue(grp, "play") > 0) ? "stop" : "preview";
-                if (deck.cueMode === "stop") {
-                    deck.isFlashingCue = true; midi.sendShortMsg(0xB0 + deck.midiChannel, 0x08, 0x7F);
-                    engine.beginTimer(80, function() { deck.isFlashingCue = false; NumarkNS6.updatePlayCueLEDs(theDeck.deckNum, theDeck.midiChannel); }, true);
-                    engine.setValue(grp, "cue_gotoandstop", 1);
-                } else {
-                    engine.setValue(grp, "cue_default", 1);
-                }
-            } else {
-                // Ignore a stray Note Off. It must never release a different
-                // CUE press that is currently being held.
-                if (!deck.cueButtonDown) return;
-                deck.cueButtonDown = false;
-                if (deck.cueMode === "stop") {
-                    engine.setValue(grp, "cue_gotoandstop", 0);
-                } else {
-                    engine.setValue(grp, "cue_default", 0);
-                    deck.cuePreviewReleasePending = true;
-                    engine.beginTimer(120, function() { deck.cuePreviewReleasePending = false; }, true);
-                }
-                deck.cueMode = null;
-            }
-            NumarkNS6.updatePlayCueLEDs(theDeck.deckNum, theDeck.midiChannel);
-        }
+    // Use exactly the native Mixxx CUE path used by the on-screen button.
+    // The component forwards the press and release pair unchanged, including
+    // rapid presses, so it cannot turn into a PLAY toggle in our script.
+    this.cueButton = new components.Button({
+        midi: [0x90 + channel, 0x10, 0xB0 + channel, 0x08],
+        group: groupName,
+        type: components.Button.prototype.types.push,
+        inKey: "cue_default",
+        output: function() {}
     });
 
     this.shiftButton = new components.Button({
