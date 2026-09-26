@@ -818,6 +818,13 @@ NumarkNS6.HotcuesContainer = function (channel) {
             
             // 2. Estado Inicial: O botão nasce sabendo que é um gatilho de tocar/preview
             inKey: "hotcue_" + i + "_activate", 
+
+            // A NS6 envia Note On e Note Off. Hotcues são comandos de disparo,
+            // portanto somente o pressionamento deve chegar ao motor do Mixxx.
+            // Isso evita uma segunda ativação ao soltar o pad.
+            input: function(ch, ctrl, val, st, grp) {
+                if (val > 0) engine.setValue(grp, this.inKey, 1);
+            },
             
             // 3. Ao segurar o SHIFT: Troca a função para Apagar e muda a cor pra vermelho
             shift: function() {
@@ -939,13 +946,26 @@ NumarkNS6.Deck = function(channel) {
         input: function (ch, ctrl, val, st, grp) {
             var deck = NumarkNS6.Decks[theDeck.deckNum];
             if (deck.shiftButton && deck.shiftButton.state) { engine.setValue(grp, "intro_start_activate", val > 0 ? 1 : 0); NumarkNS6.updatePlayCueLEDs(theDeck.deckNum, theDeck.midiChannel); return; }
-            if (val > 0) { 
-                if (engine.getValue(grp, "play") > 0) {
+            if (val > 0) {
+                // CUE tem dois comportamentos físicos distintos. Durante a
+                // reprodução ele deve voltar ao cue e parar; com o deck parado,
+                // deve tocar apenas enquanto o botão permanece pressionado.
+                deck.cuePressedWhilePlaying = engine.getValue(grp, "play") > 0;
+                if (deck.cuePressedWhilePlaying) {
                     deck.isFlashingCue = true; midi.sendShortMsg(0xB0 + deck.midiChannel, 0x08, 0x7F);
                     engine.beginTimer(80, function() { deck.isFlashingCue = false; NumarkNS6.updatePlayCueLEDs(theDeck.deckNum, theDeck.midiChannel); }, true);
+                    engine.setValue(grp, "cue_gotoandstop", 1);
+                } else {
+                    engine.setValue(grp, "cue_default", 1);
                 }
-                engine.setValue(grp, "cue_default", 1);
-            } else engine.setValue(grp, "cue_default", 0);
+            } else {
+                if (deck.cuePressedWhilePlaying) {
+                    engine.setValue(grp, "cue_gotoandstop", 0);
+                } else {
+                    engine.setValue(grp, "cue_default", 0);
+                }
+                deck.cuePressedWhilePlaying = false;
+            }
             NumarkNS6.updatePlayCueLEDs(theDeck.deckNum, theDeck.midiChannel);
         }
     });
