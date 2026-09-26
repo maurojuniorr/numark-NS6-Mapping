@@ -885,6 +885,7 @@ NumarkNS6.Deck = function(channel) {
     var theDeck = this;
     this.hotcuesContainer = new NumarkNS6.HotcuesContainer(channel);
     this.gridSlipMode = false; this.gridAdjustMode = false; this.skipMode = false; this.scratchMode = true; this.isSearching = false;
+    this.cuePressed = false;
 
     this.eqKnobs = [];
     for (var i = 1; i <= 3; i++) {
@@ -946,6 +947,15 @@ NumarkNS6.Deck = function(channel) {
             var pressed = val > 0;
 
             if (pressed) {
+                // A second press without an intervening release is not a
+                // valid NS6 button sequence. Repair the missing Note Off so
+                // the new press begins a fresh CUE preview instead of keeping
+                // the previous one latched forever.
+                if (deck.cuePressed) {
+                    print("NS6 cue repaired missing release deck=" + theDeck.deckNum);
+                    engine.setValue(grp, "cue_default", 0);
+                }
+                deck.cuePressed = true;
                 if (deck.scrubTimer !== undefined && deck.scrubTimer !== 0) {
                     engine.stopTimer(deck.scrubTimer);
                     deck.scrubTimer = 0;
@@ -968,6 +978,8 @@ NumarkNS6.Deck = function(channel) {
 
             engine.setValue(grp, "cue_default", pressed ? 1 : 0);
             if (!pressed) {
+                deck.cuePressed = false;
+                print("NS6 cue raw-release deck=" + theDeck.deckNum + " play=" + engine.getValue(grp, "play"));
                 engine.beginTimer(120, function() {
                     print("NS6 cue release deck=" + theDeck.deckNum + " settled-play=" + engine.getValue(grp, "play"));
                 }, true);
