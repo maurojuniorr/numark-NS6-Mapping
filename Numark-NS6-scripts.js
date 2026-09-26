@@ -885,8 +885,6 @@ NumarkNS6.Deck = function(channel) {
     var theDeck = this;
     this.hotcuesContainer = new NumarkNS6.HotcuesContainer(channel);
     this.gridSlipMode = false; this.gridAdjustMode = false; this.skipMode = false; this.scratchMode = true; this.isSearching = false;
-    this.cueHeld = false;
-    this.cueStartedWhilePlaying = false;
 
     this.eqKnobs = [];
     for (var i = 1; i <= 3; i++) {
@@ -936,37 +934,14 @@ NumarkNS6.Deck = function(channel) {
         } 
     });
     
-    // With a stopped deck, CUE previews while held and returns to the cue on
-    // release. With a playing deck, it immediately returns and stops. The
-    // release guard makes that stop deterministic even during rapid presses.
+    // Use Mixxx's native CUE control directly. It has the same press-and-hold
+    // semantics as the on-screen CUE button and receives the NS6 Note On/Off
+    // pair without an extra return-and-stop action racing the release.
     this.cueButton = new components.Button({
         midi: [0x90 + channel, 0x10, 0xB0 + channel, 0x08],
         group: groupName,
-        output: function() {},
-        input: function(ch, ctrl, val, st, grp) {
-            var deck = NumarkNS6.Decks[theDeck.deckNum];
-            if (val > 0) {
-                if (deck.cueHeld) return;
-                deck.cueHeld = true;
-                deck.cueStartedWhilePlaying = engine.getValue(grp, "play") > 0;
-                if (deck.cueStartedWhilePlaying) {
-                    engine.setValue(grp, "cue_gotoandstop", 1);
-                } else {
-                    engine.setValue(grp, "cue_default", 1);
-                }
-                return;
-            }
-
-            if (!deck.cueHeld) return;
-            deck.cueHeld = false;
-            if (!deck.cueStartedWhilePlaying) engine.setValue(grp, "cue_default", 0);
-            // A physical Note Off is the authoritative end of a CUE preview.
-            // Trigger the native return-and-stop action every time instead of
-            // relying on cue_default to infer it before a rapid next press.
-            engine.setValue(grp, "cue_gotoandstop", 1);
-            engine.setValue(grp, "cue_gotoandstop", 0);
-            deck.cueStartedWhilePlaying = false;
-        }
+        inKey: "cue_default",
+        output: function() {}
     });
 
     this.shiftButton = new components.Button({
@@ -1091,7 +1066,8 @@ NumarkNS6.Deck = function(channel) {
     };
 };
 
- NumarkNS6.Deck.prototype = new components.Deck();
+NumarkNS6.Deck.prototype = Object.create(components.Deck.prototype);
+NumarkNS6.Deck.prototype.constructor = NumarkNS6.Deck;
 
 
 // =======================================================
