@@ -885,6 +885,8 @@ NumarkNS6.Deck = function(channel) {
     var theDeck = this;
     this.hotcuesContainer = new NumarkNS6.HotcuesContainer(channel);
     this.gridSlipMode = false; this.gridAdjustMode = false; this.skipMode = false; this.scratchMode = true; this.isSearching = false;
+    this.cueHeld = false;
+    this.cueStartedWhilePlaying = false;
 
     this.eqKnobs = [];
     for (var i = 1; i <= 3; i++) {
@@ -934,15 +936,43 @@ NumarkNS6.Deck = function(channel) {
         } 
     });
     
-    // NS6 CUE is a return-and-stop button. Mapping it directly to the native
-    // action prevents a burst of valid press/release pairs from being treated
-    // as momentary playback by cue_default.
+    // With a stopped deck, CUE previews while held and returns to the cue on
+    // release. With a playing deck, it immediately returns and stops. The
+    // release guard makes that stop deterministic even during rapid presses.
     this.cueButton = new components.Button({
         midi: [0x90 + channel, 0x10, 0xB0 + channel, 0x08],
         group: groupName,
-        type: components.Button.prototype.types.push,
-        inKey: "cue_gotoandstop",
-        output: function() {}
+        output: function() {},
+        input: function(ch, ctrl, val, st, grp) {
+            var deck = NumarkNS6.Decks[theDeck.deckNum];
+            if (val > 0) {
+                if (deck.cueHeld) return;
+                deck.cueHeld = true;
+                deck.cueStartedWhilePlaying = engine.getValue(grp, "play") > 0;
+                if (deck.cueStartedWhilePlaying) {
+                    engine.setValue(grp, "cue_gotoandstop", 1);
+                } else {
+                    engine.setValue(grp, "cue_default", 1);
+                }
+                return;
+            }
+
+            if (!deck.cueHeld) return;
+            deck.cueHeld = false;
+            if (deck.cueStartedWhilePlaying) {
+                engine.setValue(grp, "cue_gotoandstop", 0);
+            } else {
+                engine.setValue(grp, "cue_default", 0);
+                engine.beginTimer(12, function() {
+                    // Do not interrupt a new CUE hold; otherwise guarantee that
+                    // a released preview is returned to the cue and stopped.
+                    if (!deck.cueHeld && engine.getValue(grp, "play") > 0) {
+                        engine.setValue(grp, "cue_gotoandstop", 1);
+                    }
+                }, true);
+            }
+            deck.cueStartedWhilePlaying = false;
+        }
     });
 
     this.shiftButton = new components.Button({
