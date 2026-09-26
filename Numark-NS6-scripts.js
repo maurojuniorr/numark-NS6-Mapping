@@ -934,14 +934,45 @@ NumarkNS6.Deck = function(channel) {
         } 
     });
     
-    // Use Mixxx's native CUE control directly. It has the same press-and-hold
-    // semantics as the on-screen CUE button and receives the NS6 Note On/Off
-    // pair without an extra return-and-stop action racing the release.
+    // Use Mixxx's native CUE control directly. A pending scratch handoff may
+    // otherwise restore play shortly after CUE has stopped the deck, so CUE
+    // always cancels that pending recovery before it reaches Mixxx.
     this.cueButton = new components.Button({
         midi: [0x90 + channel, 0x10, 0xB0 + channel, 0x08],
         group: groupName,
-        inKey: "cue_default",
-        output: function() {}
+        output: function() {},
+        input: function(ch, ctrl, val, st, grp) {
+            var deck = NumarkNS6.Decks[theDeck.deckNum];
+            var pressed = val > 0;
+
+            if (pressed) {
+                if (deck.scrubTimer !== undefined && deck.scrubTimer !== 0) {
+                    engine.stopTimer(deck.scrubTimer);
+                    deck.scrubTimer = 0;
+                }
+                if (deck.scratchReleaseTimer !== undefined && deck.scratchReleaseTimer !== 0) {
+                    engine.stopTimer(deck.scratchReleaseTimer);
+                    deck.scratchReleaseTimer = 0;
+                }
+                if (deck.playbackGuardTimer !== undefined && deck.playbackGuardTimer !== 0) {
+                    engine.stopTimer(deck.playbackGuardTimer);
+                    deck.playbackGuardTimer = 0;
+                }
+                if (engine.isScratching(theDeck.deckNum)) {
+                    engine.scratchDisable(theDeck.deckNum);
+                }
+                deck.isAutoScrubbing = false;
+                deck.wasPlayingBeforeScratch = false;
+                print("NS6 cue press deck=" + theDeck.deckNum + " play=" + engine.getValue(grp, "play"));
+            }
+
+            engine.setValue(grp, "cue_default", pressed ? 1 : 0);
+            if (!pressed) {
+                engine.beginTimer(120, function() {
+                    print("NS6 cue release deck=" + theDeck.deckNum + " settled-play=" + engine.getValue(grp, "play"));
+                }, true);
+            }
+        }
     });
 
     this.shiftButton = new components.Button({
