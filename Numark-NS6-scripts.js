@@ -885,6 +885,9 @@ NumarkNS6.Deck = function(channel) {
     var theDeck = this;
     this.hotcuesContainer = new NumarkNS6.HotcuesContainer(channel);
     this.gridSlipMode = false; this.gridAdjustMode = false; this.skipMode = false; this.scratchMode = true; this.isSearching = false;
+    this.cueButtonDown = false;
+    this.cueMode = null;
+    this.cuePreviewReleasePending = false;
 
     this.eqKnobs = [];
     for (var i = 1; i <= 3; i++) {
@@ -940,11 +943,19 @@ NumarkNS6.Deck = function(channel) {
             var deck = NumarkNS6.Decks[theDeck.deckNum];
             if (deck.shiftButton && deck.shiftButton.state) { engine.setValue(grp, "intro_start_activate", val > 0 ? 1 : 0); NumarkNS6.updatePlayCueLEDs(theDeck.deckNum, theDeck.midiChannel); return; }
             if (val > 0) {
+                // Ignore duplicate Note On messages while the physical button
+                // remains down. This keeps an extra MIDI event from toggling play.
+                if (deck.cueButtonDown) return;
+                deck.cueButtonDown = true;
+
                 // CUE tem dois comportamentos físicos distintos. Durante a
                 // reprodução ele deve voltar ao cue e parar; com o deck parado,
                 // deve tocar apenas enquanto o botão permanece pressionado.
-                deck.cuePressedWhilePlaying = engine.getValue(grp, "play") > 0;
-                if (deck.cuePressedWhilePlaying) {
+                // Após soltar um preview, o Mixxx pode ainda reportar play=1 por
+                // alguns milissegundos. Mantemos esse próximo toque como preview
+                // para que toques rápidos nunca virem PLAY.
+                deck.cueMode = (!deck.cuePreviewReleasePending && engine.getValue(grp, "play") > 0) ? "stop" : "preview";
+                if (deck.cueMode === "stop") {
                     deck.isFlashingCue = true; midi.sendShortMsg(0xB0 + deck.midiChannel, 0x08, 0x7F);
                     engine.beginTimer(80, function() { deck.isFlashingCue = false; NumarkNS6.updatePlayCueLEDs(theDeck.deckNum, theDeck.midiChannel); }, true);
                     engine.setValue(grp, "cue_gotoandstop", 1);
@@ -952,12 +963,18 @@ NumarkNS6.Deck = function(channel) {
                     engine.setValue(grp, "cue_default", 1);
                 }
             } else {
-                if (deck.cuePressedWhilePlaying) {
+                // Ignore a stray Note Off. It must never release a different
+                // CUE press that is currently being held.
+                if (!deck.cueButtonDown) return;
+                deck.cueButtonDown = false;
+                if (deck.cueMode === "stop") {
                     engine.setValue(grp, "cue_gotoandstop", 0);
                 } else {
                     engine.setValue(grp, "cue_default", 0);
+                    deck.cuePreviewReleasePending = true;
+                    engine.beginTimer(120, function() { deck.cuePreviewReleasePending = false; }, true);
                 }
-                deck.cuePressedWhilePlaying = false;
+                deck.cueMode = null;
             }
             NumarkNS6.updatePlayCueLEDs(theDeck.deckNum, theDeck.midiChannel);
         }
