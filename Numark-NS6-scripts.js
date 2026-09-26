@@ -812,16 +812,27 @@ NumarkNS6.HotcuesContainer = function (channel) {
             midi: [0x90 + channel, 0x12 + i, 0xB0 + channel, 0x0A + i], 
             number: i,
             group: theContainer.group, 
-            
-            // 1. O Motor Nativo: "push" repassa o aperto (1) e a soltura (0) pro Mixxx
-            type: components.Button.prototype.types.push,
-            
-            // 2. Estado Inicial: O botão nasce sabendo que é um gatilho de tocar/preview
-            inKey: "hotcue_" + i + "_activate", 
+            // Do not use hotcue_N_activate here. That control is a Mixxx
+            // preview/activation action and can start a stopped deck. A pad
+            // needs deterministic transport: stopped -> marker and stop;
+            // playing -> marker and continue playing.
+            input: function(ch, ctrl, val, st, grp) {
+                if (val <= 0) return;
+                var deck = NumarkNS6.Decks[channel];
+                var key = "hotcue_" + this.number + "_";
+                if (deck && deck.shiftButton && deck.shiftButton.state) {
+                    script.triggerControl(grp, key + "clear", 20);
+                } else if (engine.getValue(grp, key + "position") === -1) {
+                    script.triggerControl(grp, key + "set", 20);
+                } else if (engine.getValue(grp, "play") > 0) {
+                    script.triggerControl(grp, key + "gotoandplay", 20);
+                } else {
+                    script.triggerControl(grp, key + "gotoandstop", 20);
+                }
+            },
 
             // 3. Ao segurar o SHIFT: Troca a função para Apagar e muda a cor pra vermelho
             shift: function() {
-                this.inKey = "hotcue_" + this.number + "_clear"; 
                 if (engine.getValue(this.group, "hotcue_" + this.number + "_position") !== -1 && !NumarkNS6.isBooting) {
                     midi.sendShortMsg(this.midi[2], this.midi[3], 0x01); 
                 }
@@ -829,7 +840,6 @@ NumarkNS6.HotcuesContainer = function (channel) {
             
             // 4. Ao soltar o SHIFT: Volta pra função normal e cor branca
             unshift: function() {
-                this.inKey = "hotcue_" + this.number + "_activate"; 
                 if (engine.getValue(this.group, "hotcue_" + this.number + "_position") !== -1 && !NumarkNS6.isBooting) {
                     midi.sendShortMsg(this.midi[2], this.midi[3], 0x7F); 
                 }
