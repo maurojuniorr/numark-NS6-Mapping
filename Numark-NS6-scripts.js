@@ -18,14 +18,136 @@ NumarkNS6.Decks = [];
 NumarkNS6.jogMSB = [0, 0, 0, 0, 0];
 NumarkNS6.jogLSB = [0, 0, 0, 0, 0];
 NumarkNS6.lastJogValue = [-1, -1, -1, -1, -1];
+// Short diagnostic counters: report at touch release instead of logging every
+// high-rate jog packet. This makes it possible to compare Mixxx's input path
+// with the raw MIDI Monitor trace without flooding the log during scratching.
+NumarkNS6.jogMidiDiag = [null, null, null, null, null];
+// Keep a tiny raw MIDI window and print it only when the reconstructed jog
+// position has an outlier. This helps separate incoming CC jumps from pairing
+// effects when combining the 7-bit MSB/LSB values.
+NumarkNS6.jogTraceDeltaThreshold = 96;
+NumarkNS6.jogTraceHistoryLength = 12;
+NumarkNS6.jogTraceFutureEvents = 6;
+NumarkNS6.recordJogMidiTrace = function(diag, ctrl, val, fullValue, delta) {
+    if (!diag) return;
+    var entry = (Date.now() - diag.startedAt) + "ms " +
+        (ctrl === 0x00 ? "MSB" : "LSB") + "=" + val +
+        " pos=" + fullValue + (delta === null ? "" : " d=" + delta);
+    diag.rawEventHistory.push(entry);
+    if (diag.rawEventHistory.length > NumarkNS6.jogTraceHistoryLength) diag.rawEventHistory.shift();
+    if (diag.pendingRawTrace) {
+        diag.pendingRawTrace.push(entry);
+        diag.pendingRawTraceEvents--;
+        if (diag.pendingRawTraceEvents <= 0) NumarkNS6.flushJogMidiTrace(diag);
+    }
+};
+NumarkNS6.flushJogMidiTrace = function(diag) {
+    if (!diag || !diag.pendingRawTrace) return;
+    print("NS6 jog raw delta trace deck=" + diag.deckNum + " sequence=" + diag.pendingRawTrace.join(" | "));
+    diag.pendingRawTrace = null;
+    diag.pendingRawTraceEvents = 0;
+};
 NumarkNS6.lastJogRingValue = [0, 0, 0, 0, 0];
 NumarkNS6.lastTouchStripValue = [null, 0, 0, 0, 0];
 NumarkNS6.deckLoopMode = [null, true, true, true, true];
 NumarkNS6.harmonicSyncActive = [null, false, false, false, false];
 NumarkNS6.isProcessingHarmonic = [null, false, false, false, false];
-NumarkNS6.rateRanges = [0.02, 0.04, 0.08, 0.16, 0.32, 0.64];
+// Common Serato-style tempo ranges: fine beatmatching, wider correction,
+// and an extended range for large tempo changes.
+NumarkNS6.rateRanges = [0.08, 0.16, 0.50];
+// On the original NS6, CC 0x3C / 0x3D drive the pitch-up/down arrows.
+// The NS6II uses different Note On LEDs, so do not copy its 0x09/0x0A protocol.
+NumarkNS6.pitchTakeoverLED = { OFF: 0x00, DIM: 0x40, FULL: 0x7F, UP: 0x3C, DOWN: 0x3D };
+NumarkNS6.pitchSyncToleranceBpm = 0.02;
+NumarkNS6.pitchSyncArrowValues = function(deckBpm, otherDeckBpm) {
+    var off = NumarkNS6.pitchTakeoverLED.OFF;
+    if (deckBpm <= 0 || otherDeckBpm <= 0) return { up: off, down: off };
+    var difference = deckBpm - otherDeckBpm;
+    if (Math.abs(difference) <= NumarkNS6.pitchSyncToleranceBpm) return { up: off, down: off };
+    var brightness = Math.abs(difference) < 0.10 ? NumarkNS6.pitchTakeoverLED.DIM : NumarkNS6.pitchTakeoverLED.FULL;
+    // The NS6's physical arrows are wired with the opposite orientation to
+    // Mixxx's signed effective-BPM difference; this mapping follows the
+    // direction confirmed against the controller's pitch-bend arrows.
+    return difference < 0 ? { up: off, down: brightness } : { up: brightness, down: off };
+};
 // Dicionário de alta velocidade para evitar Regex no Jog Wheel
 NumarkNS6.groupToDeck = { "[Channel1]": 1, "[Channel2]": 2, "[Channel3]": 3, "[Channel4]": 4 };
+// Mixxx Preferences > Controllers > Numark NS6 > Start Time. Zero preserves
+// the mapping's existing instant PLAY behavior; positive values use softStart.
+var configuredPlayStartFactor = (typeof engine.getSetting === "function")
+    ? Number(engine.getSetting("playStartFactor")) : 0;
+NumarkNS6.playStartFactor = isFinite(configuredPlayStartFactor) ? configuredPlayStartFactor : 0;
+NumarkNS6.toggleDeckPlay = function(deckNum, group) {
+    var deck = NumarkNS6.Decks[deckNum];
+    var currentlyPlaying = deck && typeof deck.transportWantsPlay === "boolean"
+        ? deck.transportWantsPlay : engine.getValue(group, "play") > 0;
+    print("NS6 PLAY toggle deck=" + deckNum + " live=" + (engine.getValue(group, "play") > 0 ? 1 : 0) +
+        " intent=" + (currentlyPlaying ? 1 : 0) + " action=" + (currentlyPlaying ? "pause" : "start"));
+    if (currentlyPlaying) {
+        if (deck) deck.transportWantsPlay = false;
+        engine.setValue(group, "play", 0);
+    } else if (NumarkNS6.playStartFactor > 0) {
+        if (deck) deck.transportWantsPlay = true;
+        engine.softStart(deckNum, true, NumarkNS6.playStartFactor);
+    } else {
+        if (deck) deck.transportWantsPlay = true;
+        engine.setValue(group, "play", 1);
+    }
+};
+NumarkNS6.resetTransportIntentForCue = function(deck) {
+    if (!deck) return;
+    deck.transportWantsPlay = false;
+    deck.scratchResumeIntent = false;
+    deck.wasPlayingBeforeScratch = false;
+};
+NumarkNS6.syncTransportIntentAfterTrackLoad = function(deck, group) {
+    if (!deck) return;
+    var playing = engine.getValue(group, "play") > 0;
+    deck.transportWantsPlay = playing;
+    deck.scratchResumeIntent = playing;
+    deck.wasPlayingBeforeScratch = playing;
+    print("NS6 transport sync after track load deck=" + deck.deckNum + " play=" + (playing ? 1 : 0));
+};
+NumarkNS6.syncTransportIntentAfterCue = function(deck, group) {
+    if (!deck) return;
+    if (deck.cueIntentSyncTimer !== undefined && deck.cueIntentSyncTimer !== 0) {
+        engine.stopTimer(deck.cueIntentSyncTimer);
+    }
+    deck.cueIntentSyncTimer = engine.beginTimer(120, function() {
+        deck.cueIntentSyncTimer = 0;
+        var playing = engine.getValue(group, "play") > 0;
+        deck.transportWantsPlay = playing;
+        deck.scratchResumeIntent = playing;
+        deck.wasPlayingBeforeScratch = playing;
+        print("NS6 cue transport sync deck=" + deck.deckNum + " play=" + (playing ? 1 : 0));
+    }, true);
+};
+// PFL buttons 1-4 map directly to Mixxx decks 1-4.
+NumarkNS6.pflGroupMap = { 1: 1, 2: 2, 3: 3, 4: 4 };
+NumarkNS6.pflGroupForChannel = function (channel) {
+    return "[Channel" + (NumarkNS6.pflGroupMap[channel] || channel) + "]";
+};
+
+// The NS6 sends Note On for PFL-on and Note Off for PFL-off. PFL is exclusive
+// on the physical mixer, so selecting one deck clears the other three.
+NumarkNS6.setPFL = function (channel, enabled) {
+    var group = NumarkNS6.pflGroupForChannel(channel);
+    if (enabled) {
+        for (var deckNum = 1; deckNum <= 4; deckNum++) {
+            var deckGroup = "[Channel" + deckNum + "]";
+            engine.setValue(deckGroup, "pfl", deckGroup === group ? 1 : 0);
+        }
+        NumarkNS6.activePFLDeck = NumarkNS6.pflGroupMap[channel];
+    } else {
+        engine.setValue(group, "pfl", 0);
+        if (NumarkNS6.activePFLDeck === NumarkNS6.pflGroupMap[channel]) NumarkNS6.activePFLDeck = 0;
+    }
+};
+NumarkNS6.pflButtonInput = function (channel, value, status) {
+    var messageType = status & 0xF0;
+    if (messageType === 0x90 && value > 0) NumarkNS6.setPFL(channel, true);
+    else if (messageType === 0x80 || (messageType === 0x90 && value === 0)) NumarkNS6.setPFL(channel, false);
+};
 
 NumarkNS6.blinkState = 0;
 NumarkNS6.blinkInterval = 1000; 
@@ -41,61 +163,168 @@ NumarkNS6.scratchSettings = { "alpha": 1.0/8, "beta": (1.0/8)/32, "jogResolution
 // não um movimento humano do prato.
 NumarkNS6.maxJogDelta = 768;
 NumarkNS6.pitchBendSensitivity = 5; // Quanto menor, mais rápido ele empurra a batida
+NumarkNS6.repairPlayRelease = function (deck, group, ctrl, value) {
+    if (!deck.playPressed) return;
+    deck.playPressed = false;
+    print("NS6 play malformed Note Off deck=" + deck.deckNum + " bytes=" + ctrl + "/" + value);
+};
+// The NS6 can also emit the same malformed 0x8n 0x7D 0x7D packet instead of
+// the jog touch Note Off (0x8n 0x2C 0x00). Either Note Off ends the touch;
+// movement is not required because a stationary hold must release too. This
+// shares the existing XML binding with the PLAY release repair and ignores
+// unrelated Bn 7D 7D control-change packets.
+NumarkNS6.repairMalformedJogRelease = function (deck, ctrl, value, group) {
+    if (!deck || !deck.jogTouched) return false;
+    print("NS6 jog malformed Note Off deck=" + deck.deckNum + " bytes=" + ctrl + "/" + value);
+    NumarkNS6.jogTouch14bit(0, ctrl, 0, 0, group);
+    return true;
+};
+// The controller can emit the same malformed 0x8n 0x7D 0x7D packet for
+// PLAY, CUE, or jog-touch release. Route it once and repair whichever latches
+// are active instead of registering two XML handlers for the same MIDI bytes.
+NumarkNS6.repairMalformedTransportRelease = function (deck, group, ctrl, value) {
+    if (!deck) return;
+    if (deck.cuePressed && typeof deck.releaseCue === "function") {
+        print("NS6 cue malformed Note Off deck=" + deck.deckNum + " bytes=" + ctrl + "/" + value);
+        deck.releaseCue(group, "repaired");
+    }
+    NumarkNS6.repairPlayRelease(deck, group, ctrl, value);
+    NumarkNS6.repairMalformedJogRelease(deck, ctrl, value, group);
+};
+// Filter electrical/software duplicate Note Ons only when they arrive almost
+// simultaneously. A later Note On can be a fast new tap even if the prior
+// Note Off was delayed or lost by the device/USB path.
+NumarkNS6.acceptPlayPress = function (deck, now) {
+    if (deck.playPressed && now - deck.lastPlayPressAt < 50) return false;
+    deck.playPressed = true;
+    deck.lastPlayPressAt = now;
+    return true;
+};
 // A NS6 ainda entrega valores de posição depois do note-off do toque. O
 // handoff só ocorre depois deste período sem nenhuma posição válida.
 NumarkNS6.scratchReleaseDelayMs = 60;
-
-// Filtro de ruído do fader de volume do deck 2.
-// A captura MIDI mostrou pulsos isolados 124..127 durante movimentos suaves.
-NumarkNS6.deck2Volume = { msb: 0, lsb: 0, initialized: false };
-NumarkNS6.deck2VolumeWrite = function () {
-    var s = NumarkNS6.deck2Volume;
-    engine.setValue("[Channel2]", "volume", ((s.msb << 7) | s.lsb) / 16383.0);
+NumarkNS6.scratchPlaybackRecoveryMs = 100;
+// Only a deliberate fast reverse throw keeps following platter motion after
+// touch-off. Ordinary scratch releases return to playback immediately.
+NumarkNS6.backspinReleaseRateThreshold = -2.0;
+// Rate alone confuses a deliberate backward scratch with a thrown backspin.
+// Require a sharp recent acceleration into reverse as well (Mixxx speed units/s).
+NumarkNS6.backspinAccelerationThreshold = -8.0;
+NumarkNS6.backspinAccelerationWindowMs = 120;
+// A fast release is only a backspin candidate. Require meaningful platter
+// travel after touch-off before waiting for the full inertial tail; brief
+// reverse flicks hand playback back as soon as their short quiet window ends.
+NumarkNS6.backspinCandidateQuietMs = 35;
+NumarkNS6.backspinMinCoastMs = 100;
+NumarkNS6.backspinMinCoastDelta = 32;
+NumarkNS6.recordJogRate = function (deck, rate, now) {
+    if (!deck.jogRateSamples) deck.jogRateSamples = [];
+    deck.jogRateSamples.push({ rate: rate, time: now });
+    var cutoff = now - NumarkNS6.backspinAccelerationWindowMs;
+    while (deck.jogRateSamples.length > 2 && deck.jogRateSamples[0].time < cutoff) deck.jogRateSamples.shift();
 };
-NumarkNS6.deck2VolumeMSB = function (ch, ctrl, value) {
-    var s = NumarkNS6.deck2Volume;
-    // Pulsos de topo isolados são o defeito observado no potenciômetro.
-    if (s.initialized && value >= 124 && s.msb <= 110) return;
-    if (s.initialized && Math.abs(value - s.msb) > 32) return;
-    s.msb = value; s.initialized = true; NumarkNS6.deck2VolumeWrite();
-};
-NumarkNS6.deck2VolumeLSB = function (ch, ctrl, value) {
-    NumarkNS6.deck2Volume.lsb = value;
-    if (NumarkNS6.deck2Volume.initialized) NumarkNS6.deck2VolumeWrite();
-};
-NumarkNS6.deck1Volume = { msb: 0, lsb: 0, initialized: false };
-NumarkNS6.deck1VolumeWrite = function () {
-    var s = NumarkNS6.deck1Volume;
-    engine.setValue("[Channel1]", "volume", ((s.msb << 7) | s.lsb) / 16383.0);
-};
-NumarkNS6.deck1VolumeMSB = function (ch, ctrl, value) {
-    var s = NumarkNS6.deck1Volume;
-    if (s.initialized && value >= 124 && s.msb <= 110) return;
-    if (s.initialized && Math.abs(value - s.msb) > 32) return;
-    s.msb = value; s.initialized = true; NumarkNS6.deck1VolumeWrite();
-};
-NumarkNS6.deck1VolumeLSB = function (ch, ctrl, value) {
-    NumarkNS6.deck1Volume.lsb = value;
-    if (NumarkNS6.deck1Volume.initialized) NumarkNS6.deck1VolumeWrite();
+NumarkNS6.getJogAcceleration = function (deck) {
+    var samples = deck.jogRateSamples || [];
+    if (samples.length < 2) return null;
+    var first = samples[0], last = samples[samples.length - 1];
+    var elapsed = last.time - first.time;
+    if (elapsed <= 0 || elapsed > NumarkNS6.backspinAccelerationWindowMs) return null;
+    return (last.rate - first.rate) * 1000 / elapsed;
 };
 
-// Channel 3 uses the same direct 14-bit path as channels 1 and 2. Native
-// soft takeover can leave this fader inactive after a layer or track change.
-NumarkNS6.deck3Volume = { msb: 0, lsb: 0, initialized: false };
-NumarkNS6.deck3VolumeWrite = function () {
-    var s = NumarkNS6.deck3Volume;
-    engine.setValue("[Channel3]", "volume", ((s.msb << 7) | s.lsb) / 16383.0);
+// Volume faders use full 14-bit values. Permit real large moves, especially
+// the final travel to zero; rejecting a large MSB delta leaves a stale MSB
+// combined with new LSB packets and can make the fader jump back up.
+NumarkNS6.makeVolumeFader = function (channel) {
+    var state = {
+        msb: 0, lsb: 0, initialized: false, pendingTopMSB: null,
+        topLatched: false, pendingTopDropMSB: null, topDropTimer: 0
+    };
+    function clearPendingTopDrop() {
+        if (state.topDropTimer) engine.stopTimer(state.topDropTimer);
+        state.topDropTimer = 0;
+        state.pendingTopDropMSB = null;
+    }
+    function write() {
+        var value = state.topLatched ? 1 : ((state.msb << 7) | state.lsb) / 16383.0;
+        engine.setValue("[Channel" + channel + "]", "volume", value);
+    }
+    function commitPendingTopDrop() {
+        state.topDropTimer = 0;
+        if (!state.topLatched || state.pendingTopDropMSB === null) return;
+        state.msb = state.pendingTopDropMSB;
+        state.topLatched = false;
+        state.pendingTopDropMSB = null;
+        write();
+    }
+    return {
+        inputMSB: function (ch, ctrl, value) {
+            // A single 124..127 packet can be electrical noise, but outright
+            // rejecting it also loses a legitimate fast move to the top stop.
+            // Confirm the endpoint with the next nearby high MSB packet. While
+            // pending, keep the prior value so one isolated spike cannot kick
+            // the channel volume upward.
+            if (state.pendingTopMSB !== null) {
+                if (value >= 120) {
+                    state.msb = value;
+                    state.initialized = true;
+                    state.topLatched = value === 127;
+                    state.pendingTopMSB = null;
+                    write();
+                    return;
+                }
+                state.pendingTopMSB = null;
+            }
+            if (state.initialized && value >= 124 && state.msb <= 110) {
+                state.pendingTopMSB = value;
+                return;
+            }
+            // The captured CH2 stream reaches 127, drifts down to 122, then
+            // rebounds to 125 at the upper stop. Hold that short rebound at
+            // full scale; if the lower position persists for 120 ms, accept it.
+            if (state.topLatched && value < 127) {
+                if (value < 122) {
+                    clearPendingTopDrop();
+                    state.topLatched = false;
+                    state.msb = value;
+                    state.initialized = true;
+                    write();
+                    return;
+                }
+                if (state.pendingTopDropMSB !== null && value > state.pendingTopDropMSB) {
+                    clearPendingTopDrop();
+                    write();
+                    return;
+                }
+                state.pendingTopDropMSB = value;
+                if (!state.topDropTimer) {
+                    state.topDropTimer = engine.beginTimer(120, commitPendingTopDrop, true);
+                }
+                return;
+            }
+            if (value === 127) {
+                clearPendingTopDrop();
+                state.topLatched = true;
+                state.msb = value;
+                state.initialized = true;
+                write();
+                return;
+            }
+            state.msb = value;
+            state.initialized = true;
+            write();
+        },
+        inputLSB: function (ch, ctrl, value) {
+            state.lsb = value;
+            if (state.initialized) write();
+        }
+    };
 };
-NumarkNS6.deck3VolumeMSB = function (ch, ctrl, value) {
-    var s = NumarkNS6.deck3Volume;
-    if (s.initialized && value >= 124 && s.msb <= 110) return;
-    if (s.initialized && Math.abs(value - s.msb) > 32) return;
-    s.msb = value; s.initialized = true; NumarkNS6.deck3VolumeWrite();
-};
-NumarkNS6.deck3VolumeLSB = function (ch, ctrl, value) {
-    NumarkNS6.deck3Volume.lsb = value;
-    if (NumarkNS6.deck3Volume.initialized) NumarkNS6.deck3VolumeWrite();
-};
+for (var volumeChannel = 1; volumeChannel <= 4; volumeChannel++) {
+    NumarkNS6["deck" + volumeChannel + "Volume"] = NumarkNS6.makeVolumeFader(volumeChannel);
+    NumarkNS6["deck" + volumeChannel + "VolumeMSB"] = NumarkNS6["deck" + volumeChannel + "Volume"].inputMSB;
+    NumarkNS6["deck" + volumeChannel + "VolumeLSB"] = NumarkNS6["deck" + volumeChannel + "Volume"].inputLSB;
+}
 
 // Os faders e knobs da NS6 são 14-bit. Alguns enviam picos isolados perto
 // de 127; o filtro preserva movimentos normais e descarta apenas esses saltos.
@@ -136,66 +365,33 @@ NumarkNS6.filteredPot14Bit = function (options) {
     return pot;
 };
 
-// The NS6 pitch fader sends MSB and LSB separately. Keep both bytes locally
-// and write the normalized parameter ourselves, so every LSB step reaches
-// Mixxx instead of falling back to 7-bit-sized BPM jumps.
-NumarkNS6.precisePitch14Bit = function (group) {
-    return {
-        msb: 0,
-        lsb: 0,
-        targetRaw: 0,
-        currentRaw: null,
-        slewTimer: 0,
-        initialized: false,
-        write: function (raw) {
-            engine.setParameter(group, "rate", 1.0 - (raw / 16383.0));
-        },
-        updateTarget: function () {
-            this.targetRaw = (this.msb << 7) | this.lsb;
-            if (this.currentRaw === null) {
-                this.currentRaw = this.targetRaw;
-                this.write(this.currentRaw);
-                return;
-            }
-            if (this.slewTimer === 0) {
-                var self = this;
-                this.slewTimer = engine.beginTimer(1, function () {
-                    var delta = self.targetRaw - self.currentRaw;
-                    if (Math.abs(delta) <= 1) {
-                        self.currentRaw = self.targetRaw;
-                        self.write(self.currentRaw);
-                        engine.stopTimer(self.slewTimer);
-                        self.slewTimer = 0;
-                        return;
-                    }
-                    // Interpolate hardware packets that arrive about every
-                    // 5 ms. This preserves every 14-bit endpoint while
-                    // avoiding visible 0.03-BPM jumps between reports.
-                    self.currentRaw += Math.round(delta * 0.4);
-                    self.write(self.currentRaw);
-                }, false);
-            }
-        },
-        inputMSB: function (ch, ctrl, value) {
-            // The NS6 can inject an isolated 0x7D/0x7F MSB. Never turn that
-            // malformed packet into a jump to the end of the pitch range.
-            if (!this.initialized && value >= 124) return;
-            if (this.initialized && value >= 124 && this.msb <= 110) return;
-            if (this.initialized && Math.abs(value - this.msb) > 32) return;
-            this.msb = value;
-            this.initialized = true;
-            this.updateTarget();
-        },
-        inputLSB: function (ch, ctrl, value) {
-            this.lsb = value;
-            if (this.initialized) this.updateTarget();
-        }
-    };
+// The NS6 X-Fader knob is the crossfader-slope control, separate from the
+// crossfader's physical position (CC 7/39). Mixxx's xFaderCurve is logarithmic
+// over 0.6..1000, so interpolate in log space for a useful knob sweep.
+NumarkNS6.xFaderCurveForMidiValue = function (value) {
+    var normalized = Math.max(0, Math.min(127, value)) / 127.0;
+    return 0.6 * Math.pow(1000.0 / 0.6, normalized);
 };
-
-NumarkNS6.crossfader = NumarkNS6.filtered14Bit("[Master]", "crossfader", function (value) { return (value * 2.0) - 1.0; });
-NumarkNS6.crossfaderMSB = function (ch, ctrl, value) { NumarkNS6.crossfader.inputMSB(ch, ctrl, value); };
-NumarkNS6.crossfaderLSB = function (ch, ctrl, value) { NumarkNS6.crossfader.inputLSB(ch, ctrl, value); };
+NumarkNS6.setXfaderCurve = function (channel, control, value) {
+    var curve = NumarkNS6.xFaderCurveForMidiValue(value);
+    // Mixxx applies xFaderCurve in constant-power mode.
+    engine.setValue("[Mixer Profile]", "xFaderMode", 1);
+    engine.setValue("[Mixer Profile]", "xFaderCurve", curve);
+    // Keep the non-scratch profile current so the existing contour switch
+    // returns to the knob's latest setting.
+    NumarkNS6.storedCrossfaderParams.xFaderMode = 1;
+    NumarkNS6.storedCrossfaderParams.xFaderCurve = curve;
+};
+// The physical crossfader remains its own 14-bit control on CC 7/39.
+NumarkNS6.crossfader = NumarkNS6.filtered14Bit("[Master]", "crossfader", function (value) {
+    return (value * 2.0) - 1.0;
+});
+NumarkNS6.crossfaderMSB = function (channel, control, value) {
+    NumarkNS6.crossfader.inputMSB(channel, control, value);
+};
+NumarkNS6.crossfaderLSB = function (channel, control, value) {
+    NumarkNS6.crossfader.inputLSB(channel, control, value);
+};
 NumarkNS6.FXMixLeft = NumarkNS6.filtered14Bit("[EffectRack1_EffectUnit1]", "mix");
 NumarkNS6.FXMixRight = NumarkNS6.filtered14Bit("[EffectRack1_EffectUnit2]", "mix");
 NumarkNS6.FXMixLeftMSB = function (ch, ctrl, value) { NumarkNS6.FXMixLeft.inputMSB(ch, ctrl, value); };
@@ -228,6 +424,7 @@ NumarkNS6.updatePlayCueLEDs = function(deckNum, midiChannel) {
     
     var deck = NumarkNS6.Decks[deckNum];
     if (!deck) return;
+
     var group = deck.group;
     var statusCC = 0xB0 + midiChannel;
 
@@ -423,9 +620,8 @@ NumarkNS6.init = function () {
 
     NumarkNS6.Decks = [];
     for (var i = 1; i <= 4; i++) {
-        // The NS6 pitch fader has finite physical resolution. Start at ±2%
-        // so each hardware step is fine enough for manual beatmatching; the
-        // RANGE button still exposes ±4%, ±8%, ±16%, ±32% and ±64% when needed.
+        // Start at the common ±8% range used by Serato DJ and many controllers.
+        // The RANGE button cycles through ±8%, ±16%, and ±50%.
         engine.setValue("[Channel" + i + "]", "rateRange", NumarkNS6.rateRanges[0]);
         NumarkNS6.Decks[i] = new NumarkNS6.Deck(i);
         (function (dIdx) {
@@ -592,7 +788,28 @@ NumarkNS6.bootAnimation = function () {
 // Variáveis globais para a régua de BPM saber quem está visível
 NumarkNS6.leftDeck = 1;
 NumarkNS6.rightDeck = 2;
-
+NumarkNS6.toggleBigLibrary = function() {
+    var nextState = engine.getValue("[Skin]", "show_maximized_library") > 0 ? 0 : 1;
+    engine.setValue("[Skin]", "show_maximized_library", nextState);
+    return nextState;
+};
+// Mixxx 2.4+: focused_widget 1 is Search and 2 is the library tree/sidebar.
+NumarkNS6.focusLibraryWidget = function(widget) {
+    engine.setValue("[Library]", "focused_widget", widget);
+};
+NumarkNS6.updateNavLEDs = function() {
+    var focusedWidget = engine.getValue("[Library]", "focused_widget");
+    var isBigLibrary = engine.getValue("[Skin]", "show_maximized_library") > 0;
+    midi.sendShortMsg(0xB0, 0x01, 0x7F); // VIEW
+    midi.sendShortMsg(0xB0, 0x03, focusedWidget === 2 ? 0x7F : 0x00); // CRATES: tree/sidebar
+    midi.sendShortMsg(0xB0, 0x04, isBigLibrary ? 0x7F : 0x00); // PREPARE: Big Library state
+    midi.sendShortMsg(0xB0, 0x05, focusedWidget === 1 ? 0x7F : 0x00); // FILES: search
+};
+NumarkNS6.toggleDeckLayout = function() {
+    var nextState = engine.getValue("[Skin]", "show_4decks") > 0 ? 0 : 1;
+    engine.setValue("[Skin]", "show_4decks", nextState);
+    return nextState;
+};
 // The layer switches are physical two-state controls.  Do not echo their
 // incoming CC value through components.Button: doing so feeds the NS6's own
 // switch state back into the controller and can leave its LED blinking or
@@ -649,29 +866,7 @@ this.deckChangeL = new components.Button({
     });
 
     this.navigationEncoderTick = new components.Encoder({ midi: [0xB0, 0x44], group: "[Library]", input: function (ch, ctrl, val) { engine.setValue("[Library]", "MoveVertical", val < 64 ? 1 : -1); } });
-    this.autoDjAddButton = new components.Button({ midi: [0x90, 0x0D], group: "[AutoDJ]", input: function (ch, ctrl, val) { if (val === 0) return; engine.setValue("[Library]", "AutoDjAddBottom", 1); midi.sendShortMsg(0xB0, 0x0D, 0x7F); engine.beginTimer(150, function() { midi.sendShortMsg(0xB0, 0x0D, 0x00); }, true); } });
-
-    this.viewButton = new components.Button({
-        midi: [0x90, 0x01], group: "[Skin]",
-        input: function (ch, ctrl, val) {
-            if (val === 0) return;
-            var isShifted = false;
-            for (var i = 1; i <= 4; i++) { if (NumarkNS6.Decks[i] && NumarkNS6.Decks[i].shiftButton && NumarkNS6.Decks[i].shiftButton.state) { isShifted = true; break; } }
-            if (isShifted) engine.setValue("[Skin]", "show_waveforms", !engine.getValue("[Skin]", "show_waveforms"));
-            else engine.setValue("[Skin]", "show_maximized_library", !engine.getValue("[Skin]", "show_maximized_library"));
-        }
-    });
-
-    this.navigationEncoderButton = new components.Button({
-        midi: [0x90, 0x08], group: "[Library]",
-        input: function (ch, ctrl, val) {
-            if (val === 0) return; 
-            var isShifted = false;
-            for (var i = 1; i <= 4; i++) { if (NumarkNS6.Decks[i] && NumarkNS6.Decks[i].shiftButton && NumarkNS6.Decks[i].shiftButton.state) { isShifted = true; break; } }
-            if (isShifted) { engine.setValue("[AutoDJ]", "enabled", !engine.getValue("[AutoDJ]", "enabled")); midi.sendShortMsg(0xB0, 0x08, 0x7F); engine.beginTimer(100, function() { midi.sendShortMsg(0xB0, 0x08, 0x00); }, true); } 
-            else engine.setValue("[Playlist]", "ToggleSelectedSidebarItem", 1);
-        }
-    });
+    this.autoDjAddButton = new components.Button({ midi: [0x90, 0x0D], group: "[AutoDJ]", input: function (ch, ctrl, val) { if (val === 0) return; engine.setValue("[Library]", "AutoDjAddBottom", 1); } });
 
     // this.backButton = new components.Button({ midi: [0x90, 0x06], group: "[Library]", input: function (ch, ctrl, value) { if (value > 0) engine.setValue("[Library]", "MoveFocus", -1); } });
     // this.fwdButton = new components.Button({ midi: [0x90, 0x07], group: "[Library]", input: function (ch, ctrl, value) { if (value > 0) engine.setValue("[Library]", "MoveFocus", 1); } });
@@ -686,25 +881,22 @@ this.deckChangeL = new components.Button({
         engine.setValue("[Skin]", "show_maximized_library", 0);
         engine.setValue("[Skin]", "show_samplers", 0);
     };
-
-    // 2. Botão VIEW (0x01) - Volta para as Waveforms
+    // 2. Botão VIEW (0x01) - Alterna entre layouts de 2 e 4 decks
     this.viewButton = new components.Button({
         midi: [0x90, 0x01],
         input: function (ch, ctrl, val) {
             if (val > 0) {
-                NumarkNS6.resetTabs();
-                engine.setValue("[Skin]", "show_waveforms", 1);
+                NumarkNS6.toggleDeckLayout();
             }
         }
     });
 
-    // 3. Botão FILES (0x05) - Abre a Big Library (Sem Pastas)
+    // 3. Botão FILES (0x0A) - Abre a Big Library (Sem Pastas)
     this.filesButton = new components.Button({
-        midi: [0x90, 0x05],
+        midi: [0x90, 0x0A],
         input: function (ch, ctrl, val) {
             if (val > 0) {
-                NumarkNS6.resetTabs();
-                engine.setValue("[Skin]", "show_maximized_library", 1);
+                NumarkNS6.focusLibraryWidget(1);
             }
         }
     });
@@ -714,22 +906,17 @@ this.deckChangeL = new components.Button({
         midi: [0x90, 0x0B],
         input: function (ch, ctrl, val) {
             if (val > 0) {
-                NumarkNS6.resetTabs();
-                engine.setValue("[Skin]", "show_maximized_library", 1);
+                NumarkNS6.focusLibraryWidget(2);
             }
         }
     });
 
-    // 5. Botão PREPARE (0x0D) - navegação da biblioteca/AutoDJ
+    // 5. Botão PREPARE (0x09) - alterna a Big Library
     this.prepareButton = new components.Button({
-        midi: [0x90, 0x0D],
+        midi: [0x90, 0x09],
         input: function (ch, ctrl, val) {
             if (val > 0) {
-                NumarkNS6.resetTabs();
-                engine.setValue("[Skin]", "show_maximized_library", 1);
-                // 2 é a barra lateral: o encoder passa por Tracks, AutoDJ,
-                // Playlists e Crates, e o clique abre o item selecionado.
-                engine.setValue("[Library]", "focused_widget", 2);
+                NumarkNS6.toggleBigLibrary();
             }
         }
     });
@@ -737,16 +924,6 @@ this.deckChangeL = new components.Button({
     // =======================================================
     // 🚥 MOTOR DE LEDS DA NAVEGAÇÃO
     // =======================================================
-    NumarkNS6.updateNavLEDs = function() {
-        var isLib = engine.getValue("[Skin]", "show_maximized_library") > 0;
-        var isSamp = engine.getValue("[Skin]", "show_samplers") > 0;
-        var isSide = false;
-
-        midi.sendShortMsg(0xB0, 0x01, 0x7F); // VIEW sempre ON
-        midi.sendShortMsg(0xB0, 0x05, (isLib && !isSide && !isSamp) ? 0x7F : 0x00);
-        midi.sendShortMsg(0xB0, 0x03, (isLib && isSide && !isSamp) ? 0x7F : 0x00);
-        midi.sendShortMsg(0xB0, 0x04, isSamp ? 0x7F : 0x00);
-    };
     if (NumarkNS6.navTimer === 0) NumarkNS6.navTimer = engine.beginTimer(250, NumarkNS6.updateNavLEDs);
 
 
@@ -906,6 +1083,11 @@ NumarkNS6.Deck = function(channel) {
     this.hotcuesContainer = new NumarkNS6.HotcuesContainer(channel);
     this.gridSlipMode = false; this.gridAdjustMode = false; this.skipMode = false; this.scratchMode = true; this.isSearching = false;
     this.cuePressed = false;
+    this.cuePressAction = null;
+    this.cueGuardTimer = 0;
+    this.cueIntentSyncTimer = 0;
+    this.playPressed = false;
+    this.lastPlayPressAt = 0;
 
     this.eqKnobs = [];
     for (var i = 1; i <= 3; i++) {
@@ -924,37 +1106,31 @@ NumarkNS6.Deck = function(channel) {
         midi: [0x90 + channel, 0x11, 0xB0 + channel, 0x09], 
         group: groupName, 
         output: function() {}, 
-        input: function (ch, ctrl, val, st, grp) { 
+        input: function (ch, ctrl, val, st, grp) {
+            print("NS6 MIDI button PLAY deck=" + theDeck.deckNum + " edge=" + (((st & 0xF0) === 0x80 || val === 0) ? "up" : "down") + " raw=" + st + "/" + ctrl + "/" + val);
+            // Treat Note Off by status, because some NS6 releases carry 0x7D
+            // instead of zero as release velocity. Otherwise the press latch
+            // stays set and every later press is incorrectly discarded.
+            if ((st & 0xF0) === 0x80 || val === 0) {
+                theDeck.playPressed = false;
+                return;
+            }
             if (val > 0) {
+                if (!NumarkNS6.acceptPlayPress(theDeck, Date.now())) {
+                    return;
+                }
                 // 🎯 O TIRO DE MISERICÓRDIA:
                 // Se você acabou de girar o prato, vamos abortar o timer e o scratch AGORA.
                 // var deck = NumarkNS6.Decks[theDeck.deckNum];
                 var deckNum = script.deckFromGroup(grp);
                 var deck = NumarkNS6.Decks[deckNum];
 
-                if (deck.scrubTimer !== undefined && deck.scrubTimer !== 0) {
-                    engine.stopTimer(deck.scrubTimer);
-                    deck.scrubTimer = 0;
-                }
-                if (deck.scratchReleaseTimer !== undefined && deck.scratchReleaseTimer !== 0) {
-                    engine.stopTimer(deck.scratchReleaseTimer);
-                    deck.scratchReleaseTimer = 0;
-                }
-                if (deck.playbackGuardTimer !== undefined && deck.playbackGuardTimer !== 0) {
-                    engine.stopTimer(deck.playbackGuardTimer);
-                    deck.playbackGuardTimer = 0;
-                }
-                if (deck.isAutoScrubbing) {
-                    engine.scratchDisable(deckNum);
-                    deck.isAutoScrubbing = false;
-                }
+                NumarkNS6.forceJogRelease(deckNum, deck, grp, "play press");
 
-                // Agora sim, solta o som sem nenhuma "embreagem" presa!
-                script.toggleControl(grp, "play"); 
+                NumarkNS6.toggleDeckPlay(deckNum, grp);
             }
         } 
     });
-    
     // Use Mixxx's native CUE control directly. A pending scratch handoff may
     // otherwise restore play shortly after CUE has stopped the deck, so CUE
     // always cancels that pending recovery before it reaches Mixxx.
@@ -965,17 +1141,23 @@ NumarkNS6.Deck = function(channel) {
         input: function(ch, ctrl, val, st, grp) {
             var deck = NumarkNS6.Decks[theDeck.deckNum];
             var pressed = val > 0;
+            print("NS6 MIDI button CUE deck=" + theDeck.deckNum + " edge=" + (pressed ? "down" : "up") + " raw=" + st + "/" + ctrl + "/" + val);
 
             if (pressed) {
                 // A second press without an intervening release is not a
-                // valid NS6 button sequence. Repair the missing Note Off so
-                // the new press begins a fresh CUE preview instead of keeping
-                // the previous one latched forever.
+                // valid NS6 button sequence. Repair the missing Note Off and
+                // discard this edge; immediately re-pressing cue_default can
+                // set a new cue during Mixxx's asynchronous return-to-cue seek.
                 if (deck.cuePressed) {
                     print("NS6 cue repaired missing release deck=" + theDeck.deckNum);
-                    engine.setValue(grp, "cue_default", 0);
+                    deck.releaseCue(grp, "repaired");
+                    return;
                 }
                 deck.cuePressed = true;
+                deck.cuePressAction = deck.cueGuardTimer !== 0 ? "return" : "default";
+                // CUE returns/stops the deck. Clear the cached Play intent now
+                // so the very next PLAY press starts instead of acting as pause.
+                NumarkNS6.resetTransportIntentForCue(deck);
                 if (deck.scrubTimer !== undefined && deck.scrubTimer !== 0) {
                     engine.stopTimer(deck.scrubTimer);
                     deck.scrubTimer = 0;
@@ -994,10 +1176,24 @@ NumarkNS6.Deck = function(channel) {
                 deck.isAutoScrubbing = false;
                 deck.wasPlayingBeforeScratch = false;
                 print("NS6 cue press deck=" + theDeck.deckNum + " play=" + engine.getValue(grp, "play"));
-            }
-
-            engine.setValue(grp, "cue_default", pressed ? 1 : 0);
-            if (!pressed) {
+                if (deck.cuePressAction === "return") {
+                    // During the short seek-settling window, preview the
+                    // saved cue while held. This avoids redefining it at a
+                    // transient playhead position and preserves press/hold.
+                    engine.setValue(grp, "cue_preview", 1);
+                    return;
+                }
+                engine.setValue(grp, "cue_default", 1);
+            } else {
+                if (!deck.cuePressed) return;
+                if (deck.cuePressAction === "return") {
+                    engine.setValue(grp, "cue_preview", 0);
+                    deck.cuePressed = false;
+                    deck.cuePressAction = null;
+                    NumarkNS6.syncTransportIntentAfterCue(deck, grp);
+                    return;
+                }
+                engine.setValue(grp, "cue_default", 0);
                 deck.releaseCue(grp, "raw");
             }
         }
@@ -1011,17 +1207,26 @@ NumarkNS6.Deck = function(channel) {
     this.releaseCue = function(grp, source) {
         if (!theDeck.cuePressed) return;
         theDeck.cuePressed = false;
-        engine.setValue(grp, "cue_default", 0);
-        print("NS6 cue " + source + "-release deck=" + theDeck.deckNum + " play=" + engine.getValue(grp, "play"));
-        engine.beginTimer(120, function() {
-            print("NS6 cue release deck=" + theDeck.deckNum + " settled-play=" + engine.getValue(grp, "play"));
-        }, true);
-    };
-    this.cueMalformedRelease = function(ch, ctrl, val, st, grp) {
-        if (theDeck.cuePressed) {
-            print("NS6 cue malformed Note Off deck=" + theDeck.deckNum + " bytes=" + ctrl + "/" + val);
-            theDeck.releaseCue(grp, "repaired");
+        if (theDeck.cuePressAction === "default") {
+            engine.setValue(grp, "cue_default", 0);
+        } else if (theDeck.cuePressAction === "return") {
+            engine.setValue(grp, "cue_preview", 0);
         }
+        var shouldGuardRepeat = theDeck.cuePressAction === "default";
+        theDeck.cuePressAction = null;
+        if (shouldGuardRepeat) {
+            if (theDeck.cueGuardTimer !== 0) engine.stopTimer(theDeck.cueGuardTimer);
+            theDeck.cueGuardTimer = engine.beginTimer(180, function() {
+                theDeck.cueGuardTimer = 0;
+            }, true);
+        }
+        print("NS6 cue " + source + "-release deck=" + theDeck.deckNum + " play=" + engine.getValue(grp, "play"));
+        NumarkNS6.syncTransportIntentAfterCue(theDeck, grp);
+    };
+    // One XML binding handles this shared malformed Note Off for PLAY, CUE,
+    // and jog touch; each repair only acts when its own state is latched.
+    this.transportMalformedRelease = function(ch, ctrl, val, st, grp) {
+        NumarkNS6.repairMalformedTransportRelease(theDeck, grp, ctrl, val);
     };
 
     this.shiftButton = new components.Button({
@@ -1063,20 +1268,13 @@ NumarkNS6.Deck = function(channel) {
     this.crossfaderAssignRight = new components.Button({ midi: [0x90, 0x34 + (this.deckNum * 2)], group: groupName, input: function (ch, ctrl, val, st, grp) { if (val > 0) engine.setValue(grp, "orientation", 2); else if (engine.getValue(grp, "orientation") === 2) engine.setValue(grp, "orientation", 1); } });
 
     this.pflButton = new components.Button({
-        midi: [0x90, 0x30+channel, 0xB0, 0x3F+channel], group: groupName, key: "pfl",
+        midi: [0x90, 0x30+channel], group: NumarkNS6.pflGroupForChannel(channel), key: "pfl",
+        // PFL LEDs are controlled internally by the NS6 mixer. Do not emit
+        // MIDI feedback on state changes or during controller shutdown.
+        outConnect: false,
+        shutdown: function() {},
         input: function(_c, _ctrl, val, status) {
-            // PFL is a latching switch in the NS6 itself. Its LED and button
-            // state are maintained by the hardware: Note On enables it and a
-            // zero-value Note Off disables it. Do not turn this into a toggle.
-            if (status === 0x90 && val > 0) {
-                NumarkNS6.activePFLDeck = channel;
-                for (var deckNum = 1; deckNum <= 4; deckNum++) {
-                    engine.setValue("[Channel" + deckNum + "]", "pfl", deckNum === channel ? 1 : 0);
-                }
-            } else if (status === 0x80 && val === 0) {
-                engine.setValue(groupName, "pfl", 0);
-                if (NumarkNS6.activePFLDeck === channel) NumarkNS6.activePFLDeck = 0;
-            }
+            NumarkNS6.pflButtonInput(channel, val, status);
         }
     });
 
@@ -1103,6 +1301,7 @@ NumarkNS6.Deck = function(channel) {
     };
     engine.makeConnection(this.group, "track_loaded", function(val) {
         if (val === 0) { engine.stopTimer(theDeck.blinkTimer); theDeck.blinkTimer=0; return; }
+        NumarkNS6.syncTransportIntentAfterTrackLoad(theDeck, this.group);
         if (!this.previouslyLoaded) theDeck.blinkTimer=engine.beginTimer(NumarkNS6.blinkInterval, theDeck.manageChannelIndicator.bind(this), true);
         this.previouslyLoaded=val;
     }.bind(this));
@@ -1110,7 +1309,13 @@ NumarkNS6.Deck = function(channel) {
     this.pitchBendMinus = new components.Button({ midi: [0x90+channel, 0x18, 0xB0+channel, 0x3D], key: "rate_temp_down", shift: function() { this.inkey = "rate_temp_down_small"; }, unshift: function() { this.inkey = "rate_temp_down"; } });
     this.pitchBendPlus = new components.Button({ midi: [0x90+channel, 0x19, 0xB0+channel, 0x3C], key: "rate_temp_up", shift: function() { this.inkey = "rate_temp_up_small"; }, unshift: function() { this.inkey = "rate_temp_up"; } });
     this.keylockButton = new components.Button({ midi: [0x90+channel, 0x1B, 0xB0+channel, 0x10], type: components.Button.prototype.types.toggle, shift: function() { this.inKey="sync_key"; this.outKey="sync_key"; }, unshift: function() { this.inKey="keylock"; this.outKey="keylock"; } });
-    this.bpmSlider = NumarkNS6.precisePitch14Bit(theDeck.group);
+    this.bpmSlider = new components.Pot({
+        midi: [0xB0 + channel, 0x01, 0xB0 + channel, 0x21],
+        inKey: "rate", group: theDeck.group, invert: true,
+        inSetParameter: function(value) {
+            components.Pot.prototype.inSetParameter.call(this, value);
+        }
+    });
     
     this.pitchLedHandler = engine.makeConnection(this.group, "rate", function(val) {
         // A centred 14-bit fader does not always produce binary zero (the
@@ -1131,16 +1336,22 @@ NumarkNS6.Deck = function(channel) {
             engine.setValue(this.group, "rateRange", NumarkNS6.rateRanges[theDeck.rateRangeEntry]);
             this.send(0x7F); engine.beginTimer(50, () => this.send(0x00), true);
         },
-        output: function (val) { this.send(val !== 0.08 ? 0x7F : 0x00); }
+        // The NS6 has a single RANGE indicator LED. Light it for the
+        // controller's standard ±8% range; the other ranges remain selectable.
+        output: function (val) { this.send(Math.abs(val - 0.08) < 0.0001 ? 0x7F : 0x00); }
     });
 
      this.reconnectComponents(function(c) { if (c.group === undefined || c.group === "") c.group = groupName; });
     this.shutdown = function() {
         this.pitchLedHandler.disconnect();
         midi.sendShortMsg(0xB0+channel, 0x37, 0); 
+        midi.sendShortMsg(0xB0+channel, NumarkNS6.pitchTakeoverLED.UP, 0x00);
+        midi.sendShortMsg(0xB0+channel, NumarkNS6.pitchTakeoverLED.DOWN, 0x00);
         this.pitchRange.send(0); this.keylockButton.send(0); this.syncButton.send(0);
         this.pitchBendPlus.send(0); this.pitchBendMinus.send(0); this.cueButton.send(0);
         this.playButton.send(0); this.shiftButton.send(0); 
+        if (theDeck.cueIntentSyncTimer !== 0) engine.stopTimer(theDeck.cueIntentSyncTimer);
+        theDeck.cueIntentSyncTimer = 0;
         if (theDeck.blinkTimer !== 0) engine.stopTimer(theDeck.blinkTimer);
         midi.sendShortMsg(0xB0, 0x1D+channel, 0); 
     };
@@ -1168,29 +1379,111 @@ NumarkNS6.jogMove14bit = function(ch, ctrl, val, st, grp) {
     // var deckNum = script.deckFromGroup(grp);
     // Substitua var deckNum = script.deckFromGroup(grp); por:
     var deckNum = NumarkNS6.groupToDeck[grp];
+    var deck = NumarkNS6.Decks[deckNum];
+    var diag = NumarkNS6.jogMidiDiag[deckNum];
+    if (diag && deck && deck.jogTouched) {
+        var packetAt = Date.now();
+        if (diag.lastPacketAt) diag.maxInterPacketMs = Math.max(diag.maxInterPacketMs, packetAt - diag.lastPacketAt);
+        diag.lastPacketAt = packetAt;
+        if (ctrl === 0x00) diag.msbPackets++;
+        else if (ctrl === 0x20) diag.lsbPackets++;
+    }
 
     if (ctrl === 0x00) NumarkNS6.jogMSB[deckNum] = val;
     if (ctrl === 0x20) NumarkNS6.jogLSB[deckNum] = val;
-    if (ctrl !== 0x20) return; 
-    
     var fullValue = (NumarkNS6.jogMSB[deckNum] << 7) | NumarkNS6.jogLSB[deckNum];
-    if (NumarkNS6.lastJogValue[deckNum] === -1) { NumarkNS6.lastJogValue[deckNum] = fullValue; return; }
+    if (ctrl !== 0x20) {
+        if (deck && deck.jogTouched) NumarkNS6.recordJogMidiTrace(diag, ctrl, val, fullValue, null);
+        return;
+    }
+    if (NumarkNS6.lastJogValue[deckNum] === -1) {
+        NumarkNS6.lastJogValue[deckNum] = fullValue;
+        if (diag && deck && deck.jogTouched) {
+            diag.processedSamples++;
+            NumarkNS6.recordJogMidiTrace(diag, ctrl, val, fullValue, null);
+        }
+        return;
+    }
     
     var delta = fullValue - NumarkNS6.lastJogValue[deckNum];
     if (delta > 8192) delta -= 16384; else if (delta < -8192) delta += 16384;
-    // A controladora ocasionalmente intercala 0x7D em MSB/LSB. Não aceite
-    // a amostra até que uma posição fisicamente possível chegue.
-    if (Math.abs(delta) > NumarkNS6.maxJogDelta) return;
+    if (deck && deck.jogTouched) NumarkNS6.recordJogMidiTrace(diag, ctrl, val, fullValue, delta);
+    if (diag && deck && deck.jogTouched && Math.abs(delta) >= NumarkNS6.jogTraceDeltaThreshold && !diag.pendingRawTrace) {
+        diag.pendingRawTrace = diag.rawEventHistory.slice();
+        diag.pendingRawTraceEvents = NumarkNS6.jogTraceFutureEvents;
+    }
+    // Reject an impossible jump, but rebase to that sample. Keeping the old position here can make every
+    // later delta look impossible until the platter eventually catches up.
+    if (Math.abs(delta) > NumarkNS6.maxJogDelta) {
+        if (diag && deck && deck.jogTouched) diag.rejectedSamples++;
+        NumarkNS6.lastJogValue[deckNum] = fullValue;
+        return;
+    }
     NumarkNS6.lastJogValue[deckNum] = fullValue;
-    
-    var deck = NumarkNS6.Decks[deckNum];
+    if (diag && deck && deck.jogTouched) {
+        diag.processedSamples++;
+        diag.maxAbsDelta = Math.max(diag.maxAbsDelta, Math.abs(delta));
+        if (delta === 0) diag.zeroSamples++;
+        else {
+            if (diag.movingSamples === 0) {
+                diag.minDelta = delta;
+                diag.maxDelta = delta;
+            } else {
+                diag.minDelta = Math.min(diag.minDelta, delta);
+                diag.maxDelta = Math.max(diag.maxDelta, delta);
+            }
+        }
+        if (delta !== 0) {
+            diag.movingSamples++;
+            if (delta > 0) { diag.forwardSamples++; diag.forwardDelta += delta; }
+            else { diag.backwardSamples++; diag.backwardDelta += -delta; }
+        }
+    }
     if (!deck) return;
 
-    // O note-off do sensor chega antes de a roda parar. Enquanto houver
-    // movimento válido, mantenha o motor de scratch e adie o handoff.
-    if (!deck.jogTouched && deck.scratchReleaseTimer !== undefined && deck.scratchReleaseTimer !== 0) {
-        NumarkNS6.scheduleScratchHandoff(deckNum, deck, grp);
+    if (deck.jogTouched && delta !== 0) {
+        NumarkNS6.recordJogRate(deck, engine.getValue(grp, "scratch2"), Date.now());
     }
+
+    // Continue following the platter's real inertia after touch release.
+    // Hand off only after the encoder has been quiet for the release interval.
+    if (!deck.jogTouched && deck.scratchReleasePending) {
+        if (deck.backspinCandidate && delta < 0) {
+            // Confirm only real reverse coast after touch-off. Absolute deltas
+            // also counted forward motion and could misclassify an ordinary
+            // backward scratch release as a backspin.
+            var now = Date.now();
+            if (!deck.backspinTailStartedAt) deck.backspinTailStartedAt = now;
+            deck.backspinTailDelta += -delta;
+            if (now - deck.backspinTailStartedAt >= NumarkNS6.backspinMinCoastMs &&
+                    deck.backspinTailDelta >= NumarkNS6.backspinMinCoastDelta) {
+                deck.backspinCandidate = false;
+                deck.backspinConfirmed = true;
+                print("NS6 backspin confirmed deck=" + deckNum + " tailMs=" +
+                    (now - deck.backspinTailStartedAt) + " reverseTailDelta=" + deck.backspinTailDelta);
+            }
+        } else if (deck.backspinCandidate && delta > 0) {
+            // A forward tail is evidence against a reverse throw. Return to
+            // the ordinary, short handoff path instead of extending scratch.
+            deck.backspinCandidate = false;
+            deck.backspinTailStartedAt = 0;
+            deck.backspinTailDelta = 0;
+            print("NS6 backspin candidate canceled by forward tail deck=" + deckNum);
+        }
+        if (engine.isScratching(deckNum) && !deck.isAutoScrubbing) {
+            engine.scratchTick(deckNum, delta);
+            if (diag && delta !== 0) {
+                diag.scratchTickCalls++;
+                diag.scratchTickAbsSum += Math.abs(delta);
+            }
+        }
+        NumarkNS6.scheduleScratchHandoff(deckNum, deck, grp);
+        return;
+    }
+
+    // Discard late packets after the completed handoff instead of turning
+    // them into an unintended nudge.
+    if (!deck.jogTouched && deck.ignoreJogTail) return;
     
     // 1. MODO SKIP (Beatjump via Prato - Protegido!)
     if (deck.skipMode) {
@@ -1243,6 +1536,10 @@ NumarkNS6.jogMove14bit = function(ch, ctrl, val, st, grp) {
     if (engine.isScratching(deckNum) && !deck.isAutoScrubbing) {
         // ...Nós arrastamos a música! (Modo Scratch)
         engine.scratchTick(deckNum, delta);
+        if (diag && deck.jogTouched && delta !== 0) {
+            diag.scratchTickCalls++;
+            diag.scratchTickAbsSum += Math.abs(delta);
+        }
     } else {
         // Se a mão NÃO está no prato (ou o modo Scratch está desligado)...
         if (engine.getValue(grp, "play") > 0) {
@@ -1286,26 +1583,107 @@ NumarkNS6.scheduleScratchHandoff = function (deckNum, deck, grp) {
     if (deck.scratchReleaseTimer !== undefined && deck.scratchReleaseTimer !== 0) {
         engine.stopTimer(deck.scratchReleaseTimer);
     }
-    deck.scratchReleaseTimer = engine.beginTimer(NumarkNS6.scratchReleaseDelayMs, function () {
+    if (!deck.scratchReleasePending) return;
+    var resumePlayback = (typeof deck.transportWantsPlay === "boolean")
+        ? deck.transportWantsPlay : (deck.scratchResumeIntent || deck.wasPlayingBeforeScratch);
+    var quietDelay = deck.backspinCandidate
+        ? NumarkNS6.backspinCandidateQuietMs : NumarkNS6.scratchReleaseDelayMs;
+    deck.scratchReleaseTimer = engine.beginTimer(quietDelay, function () {
         deck.scratchReleaseTimer = 0;
         if (deck.jogTouched) return;
-        var resumePlayback = deck.wasPlayingBeforeScratch;
-        print("NS6 handoff disable deck=" + deckNum + " resume=" + (resumePlayback ? 1 : 0) + " play=" + engine.getValue(grp, "play") + " scratch=" + engine.isScratching(deckNum));
-        engine.scratchDisable(deckNum, resumePlayback);
-        deck.wasPlayingBeforeScratch = false;
-        // Alguns handoffs deixam o controle play em zero mesmo com a
-        // rampa solicitada. Só nesse caso restauramos o estado original.
-        if (resumePlayback) {
-            deck.playbackGuardTimer = engine.beginTimer(75, function () {
-                deck.playbackGuardTimer = 0;
-                if (deck.jogTouched) return;
-                print("NS6 handoff guard deck=" + deckNum + " play=" + engine.getValue(grp, "play") + " scratch=" + engine.isScratching(deckNum));
-                if (engine.getValue(grp, "play") === 0) {
-                    print("NS6: restaurando play apos handoff no deck " + deckNum);
-                    engine.setValue(grp, "play", 1);
-                }
+        if (deck.backspinCandidate && !deck.backspinConfirmed) {
+            deck.scratchReleasePending = false;
+            deck.backspinCandidate = false;
+            deck.backspinConfirmed = false;
+            deck.wasPlayingBeforeScratch = false;
+            deck.ignoreJogTail = true;
+            print("NS6 short reverse release; returning to playback deck=" + deckNum +
+                " tailMs=" + (deck.backspinTailStartedAt ? Date.now() - deck.backspinTailStartedAt : 0) +
+                " tailDelta=" + (deck.backspinTailDelta || 0));
+            NumarkNS6.releaseScratchToPlayback(deckNum, deck, grp);
+            deck.scratchReleaseTimer = engine.beginTimer(NumarkNS6.scratchReleaseDelayMs, function () {
+                deck.scratchReleaseTimer = 0;
+                deck.ignoreJogTail = false;
             }, true);
+            NumarkNS6.scheduleScratchPlaybackRecovery(deckNum, deck, grp, resumePlayback);
+            return;
         }
+        deck.scratchReleasePending = false;
+        deck.backspinConfirmed = false;
+        deck.ignoreJogTail = false;
+        print("NS6 handoff complete deck=" + deckNum + " play=" + engine.getValue(grp, "play") + " scratch=" + engine.isScratching(deckNum) + " rate=" + engine.getValue(grp, "scratch2"));
+        // Let the real platter movement supply the whole backspin, then snap
+        // back to normal playback once it has stopped sending position data.
+        NumarkNS6.releaseScratchToPlayback(deckNum, deck, grp);
+        deck.wasPlayingBeforeScratch = false;
+        deck.ignoreJogTail = true;
+        deck.scratchReleaseTimer = engine.beginTimer(NumarkNS6.scratchReleaseDelayMs, function () {
+            deck.scratchReleaseTimer = 0;
+            deck.ignoreJogTail = false;
+        }, true);
+        // Scratch never sends a Play/Pause command. Let scratchDisable return
+        // playback ownership directly to Mixxx; manufacturing a Play press
+        // here can restart/drag the track after an otherwise normal scratch.
+        NumarkNS6.scheduleScratchPlaybackRecovery(deckNum, deck, grp, resumePlayback);
+    }, true);
+};
+
+// Recover only if Mixxx dropped its Play control during a scratch handoff.
+// This never toggles a deck that was paused before the jog was touched.
+NumarkNS6.scheduleScratchPlaybackRecovery = function (deckNum, deck, grp, resumePlayback) {
+    if (!resumePlayback) return;
+    if (deck.playbackGuardTimer !== undefined && deck.playbackGuardTimer !== 0) {
+        engine.stopTimer(deck.playbackGuardTimer);
+    }
+    deck.playbackGuardTimer = engine.beginTimer(NumarkNS6.scratchPlaybackRecoveryMs, function () {
+        deck.playbackGuardTimer = 0;
+        if (deck.jogTouched) return;
+        if (deck.transportWantsPlay === false) return;
+        if (engine.getValue(grp, "play") === 0) {
+            print("NS6: restoring lost Play state after scratch handoff on deck " + deckNum);
+            engine.setValue(grp, "play", 1);
+        }
+        deck.scratchResumeIntent = false;
+    }, true);
+};
+
+// End scratch toward normal playback when Play is intended to stay on.
+// The final handoff must jump to the current deck rate: ramp=true can leave a
+// short reverse scratch/backspin crawling near zero, which feels like touch
+// stayed engaged even though the release edge was received.
+NumarkNS6.releaseScratchToPlayback = function (deckNum, deck, grp) {
+    // O estado capturado no início do toque é autoritativo. O valor atual do
+    // controle pode refletir uma transição interna do scratch, não intenção
+    // de iniciar uma faixa que estava pausada.
+    var resume = (typeof deck.transportWantsPlay === "boolean")
+        ? deck.transportWantsPlay
+        : ((deck.scratchResumeIntent || deck.wasPlayingBeforeScratch) || engine.getValue(grp, "play") > 0);
+    engine.scratchDisable(deckNum, false);
+    return resume;
+};
+
+NumarkNS6.forceJogRelease = function (deckNum, deck, grp, reason) {
+    ["scrubTimer", "scratchReleaseTimer", "playbackGuardTimer"].forEach(function (timerName) {
+        if (deck[timerName] !== undefined && deck[timerName] !== 0) engine.stopTimer(deck[timerName]);
+        deck[timerName] = 0;
+    });
+    if (deck.jogTouched || deck.scratchReleasePending || deck.isAutoScrubbing || engine.isScratching(deckNum)) {
+        print("NS6 scratch resync deck=" + deckNum + " reason=" + reason);
+        NumarkNS6.releaseScratchToPlayback(deckNum, deck, grp);
+    }
+    deck.jogTouched = false;
+    deck.scratchReleasePending = false;
+    deck.wasPlayingBeforeScratch = false;
+    deck.scratchResumeIntent = false;
+    deck.backspinCandidate = false;
+    deck.backspinConfirmed = false;
+    deck.backspinTailStartedAt = 0;
+    deck.backspinTailDelta = 0;
+    deck.isAutoScrubbing = false;
+    deck.ignoreJogTail = true;
+    deck.scratchReleaseTimer = engine.beginTimer(NumarkNS6.scratchReleaseDelayMs, function () {
+        deck.scratchReleaseTimer = 0;
+        deck.ignoreJogTail = false;
     }, true);
 };
 
@@ -1322,6 +1700,15 @@ NumarkNS6.jogTouch14bit = function (ch, ctrl, val, st, grp) {
     deck.isAutoScrubbing = false;
 
     if ((val > 0) && deck.scratchMode) {
+        // Touch is a state, not a retrigger. A repeated Note On while already
+        // touched must not disable scratch and briefly hand playback back.
+        if (deck.jogTouched) {
+            print("NS6 repeated jog touch deck=" + deckNum + " value=" + val + " keeping scratch active");
+            return;
+        }
+        var playbackGuardPending = deck.playbackGuardTimer !== undefined && deck.playbackGuardTimer !== 0;
+        var preserveResumeIntent = engine.getValue(grp, "play") > 0 ||
+            (playbackGuardPending && deck.scratchResumeIntent === true && deck.transportWantsPlay === true);
         if (deck.scratchReleaseTimer !== undefined && deck.scratchReleaseTimer !== 0) {
             engine.stopTimer(deck.scratchReleaseTimer);
             deck.scratchReleaseTimer = 0;
@@ -1331,17 +1718,86 @@ NumarkNS6.jogTouch14bit = function (ch, ctrl, val, st, grp) {
             deck.playbackGuardTimer = 0;
         }
         deck.jogTouched = true;
-        deck.wasPlayingBeforeScratch = engine.getValue(grp, "play") > 0;
+        NumarkNS6.jogMidiDiag[deckNum] = {
+            deckNum: deckNum, startedAt: Date.now(), msbPackets: 0, lsbPackets: 0,
+            processedSamples: 0, movingSamples: 0, zeroSamples: 0, rejectedSamples: 0,
+            maxAbsDelta: 0, minDelta: 0, maxDelta: 0,
+            scratchTickCalls: 0, scratchTickAbsSum: 0,
+            forwardSamples: 0, backwardSamples: 0, forwardDelta: 0, backwardDelta: 0,
+            maxInterPacketMs: 0, lastPacketAt: 0,
+            rawEventHistory: [], pendingRawTrace: null, pendingRawTraceEvents: 0
+        };
+        deck.backspinCandidate = false;
+        deck.backspinConfirmed = false;
+        deck.backspinTailStartedAt = 0;
+        deck.backspinTailDelta = 0;
+        deck.scratchReleasePending = false;
+        deck.wasPlayingBeforeScratch = preserveResumeIntent;
+        deck.scratchResumeIntent = preserveResumeIntent;
+        deck.transportWantsPlay = preserveResumeIntent;
+        deck.jogRateSamples = [];
+        NumarkNS6.recordJogRate(deck, engine.getValue(grp, "scratch2"), Date.now());
+        deck.ignoreJogTail = false;
         print("NS6 handoff touch deck=" + deckNum + " play=" + (deck.wasPlayingBeforeScratch ? 1 : 0));
         engine.scratchEnable(deckNum, NumarkNS6.scratchSettings.jogResolution, 33.33, NumarkNS6.scratchSettings.alpha, NumarkNS6.scratchSettings.beta);
     } else {
         // A NS6 ocasionalmente transmite um note-off adicional sem o
         // correspondente note-on. Nunca deixe esse evento solto encerrar um
         // motor de scratch ou mudar o estado de reprodução do deck.
-        if (!deck.jogTouched) return;
+        if (!deck.jogTouched) {
+            return;
+        }
+        var jogDiag = NumarkNS6.jogMidiDiag[deckNum];
+        if (jogDiag) {
+            NumarkNS6.flushJogMidiTrace(jogDiag);
+            print("NS6 MIDI jog capture deck=" + deckNum +
+                " durationMs=" + (Date.now() - jogDiag.startedAt) +
+                " packetsMSB=" + jogDiag.msbPackets + " packetsLSB=" + jogDiag.lsbPackets +
+                " processed=" + jogDiag.processedSamples + " moving=" + jogDiag.movingSamples +
+                " zero=" + jogDiag.zeroSamples + " maxAbsDelta=" + jogDiag.maxAbsDelta +
+                " minDelta=" + jogDiag.minDelta + " maxDelta=" + jogDiag.maxDelta +
+                " scratchTicks=" + jogDiag.scratchTickCalls + " tickAbsSum=" + jogDiag.scratchTickAbsSum +
+                " forward=" + jogDiag.forwardSamples + "/" + jogDiag.forwardDelta +
+                " backward=" + jogDiag.backwardSamples + "/" + jogDiag.backwardDelta +
+                " rejected=" + jogDiag.rejectedSamples + " maxGapMs=" + jogDiag.maxInterPacketMs);
+            NumarkNS6.jogMidiDiag[deckNum] = null;
+        }
         deck.jogTouched = false;
-        print("NS6 handoff release deck=" + deckNum + " play=" + engine.getValue(grp, "play") + " scratch=" + engine.isScratching(deckNum) + " rate=" + engine.getValue(grp, "scratch2"));
-        NumarkNS6.scheduleScratchHandoff(deckNum, deck, grp);
+        var releaseRate = engine.getValue(grp, "scratch2");
+        NumarkNS6.recordJogRate(deck, releaseRate, Date.now());
+        var releaseAcceleration = NumarkNS6.getJogAcceleration(deck);
+        print("NS6 handoff release deck=" + deckNum + " play=" + engine.getValue(grp, "play") + " scratch=" + engine.isScratching(deckNum) + " rate=" + releaseRate + " accel=" + releaseAcceleration);
+        // Backspin is only a backward throw. The acceleration test by itself
+        // can also match a forward movement that is slowing down, so require
+        // an explicitly negative platter rate before considering the throw.
+        if (deck.wasPlayingBeforeScratch && releaseRate < 0 && releaseRate <= NumarkNS6.backspinReleaseRateThreshold && releaseAcceleration !== null && releaseAcceleration <= NumarkNS6.backspinAccelerationThreshold) {
+            // Treat this as a candidate until enough real platter movement
+            // arrives after touch-off; a brief flick must not wait for a long
+            // backspin handoff.
+            deck.scratchReleasePending = true;
+            deck.backspinCandidate = true;
+            deck.backspinConfirmed = false;
+            deck.backspinTailStartedAt = 0;
+            deck.backspinTailDelta = 0;
+            deck.ignoreJogTail = false;
+            NumarkNS6.scheduleScratchHandoff(deckNum, deck, grp);
+        } else {
+            // Normal scratch release must not simulate another Play press or
+            // wait for platter coasting; just hand playback back to Mixxx.
+            var resumePlayback = (typeof deck.transportWantsPlay === "boolean")
+                ? deck.transportWantsPlay : (deck.scratchResumeIntent || deck.wasPlayingBeforeScratch);
+            deck.scratchReleasePending = false;
+            deck.backspinCandidate = false;
+            deck.backspinConfirmed = false;
+            NumarkNS6.releaseScratchToPlayback(deckNum, deck, grp);
+            deck.wasPlayingBeforeScratch = false;
+            deck.ignoreJogTail = true;
+            deck.scratchReleaseTimer = engine.beginTimer(NumarkNS6.scratchReleaseDelayMs, function () {
+                deck.scratchReleaseTimer = 0;
+                deck.ignoreJogTail = false;
+            }, true);
+            NumarkNS6.scheduleScratchPlaybackRecovery(deckNum, deck, grp, resumePlayback);
+        }
     }
 };
 
@@ -1414,6 +1870,19 @@ NumarkNS6.lastBpmLed = -1;
 // `bpm` is already the effective, rate-adjusted BPM in Mixxx. Keep the
 // centre precise without making it impossible to hit with a 14-bit fader.
 NumarkNS6.bpmMeterCenterTolerance = 0.02;
+NumarkNS6.bpmMeterLedValue = function(bpmLeft, bpmRight, rateRangeLeft, rateRangeRight) {
+    if (bpmLeft <= 0 || bpmRight <= 0) return 0;
+    var difference = bpmLeft - bpmRight;
+    var center = 6;
+    if (Math.abs(difference) <= NumarkNS6.bpmMeterCenterTolerance) return center;
+    var pitchRange = Math.max(rateRangeLeft || 0, rateRangeRight || 0, 0.04);
+    var meterStep = (Math.max(bpmLeft, bpmRight) * pitchRange) / 5;
+    var offset = Math.ceil(Math.abs(difference) / meterStep);
+    // The meter must move toward whichever deck is faster: left=fewer LEDs,
+    // right=more LEDs; distance from center represents BPM difference.
+    var ledValue = center + (difference > 0 ? -offset : offset);
+    return Math.max(1, Math.min(11, ledValue));
+};
 
 NumarkNS6.updateBpmMeter = function() {
     if (NumarkNS6.isBooting) return; // 🛡️ Bloqueia durante a animação do Vegas Mode!
@@ -1430,37 +1899,24 @@ NumarkNS6.updateBpmMeter = function() {
     var bpm1 = engine.getValue(leftGroup, "bpm");
     var bpm2 = engine.getValue(rightGroup, "bpm");
 
-    // Se um dos decks ativos estiver vazio ou parado em 0, desliga o LED
-    if (bpm1 <= 0 || bpm2 <= 0) {
-        if (NumarkNS6.lastBpmLed !== 0) {
-            midi.sendShortMsg(0xB0, 0x36, 0x00);
-            NumarkNS6.lastBpmLed = 0;
-        }
-        return;
-    }
+    // The original NS6's two pitch arrows are a beatmatch guide, not the
+    // NS6II's physical/software pitch-fader takeover indicator. Compare the
+    // active left and right decks and point each side toward the matching BPM.
+    [
+        { deckNum: left, deckBpm: bpm1, otherBpm: bpm2 },
+        { deckNum: right, deckBpm: bpm2, otherBpm: bpm1 }
+    ].forEach(function (deck) {
+        var arrows = NumarkNS6.pitchSyncArrowValues(deck.deckBpm, deck.otherBpm);
+        midi.sendShortMsg(0xB0 + deck.deckNum, NumarkNS6.pitchTakeoverLED.UP, arrows.up);
+        midi.sendShortMsg(0xB0 + deck.deckNum, NumarkNS6.pitchTakeoverLED.DOWN, arrows.down);
+    });
 
-    var diff = bpm1 - bpm2;
-    var center = 6;
-    var ledValue;
-    if (Math.abs(diff) <= NumarkNS6.bpmMeterCenterTolerance) {
-        ledValue = center;
-    } else {
-        // Scale the five LEDs on each side to the active pitch range instead
-        // of a fixed ±0.5 BPM. At ±4% and 128 BPM, each step is about 1 BPM
-        // and the far LED is reached only near the end of the pitch fader.
-        var pitchRange = Math.max(
-            engine.getValue(leftGroup, "rateRange"),
-            engine.getValue(rightGroup, "rateRange"),
-            0.04
-        );
-        var meterStep = (Math.max(bpm1, bpm2) * pitchRange) / 5;
-        var ledOffset = Math.ceil(Math.abs(diff) / meterStep);
-        ledValue = center + (diff > 0 ? ledOffset : -ledOffset);
-    }
-
-    // Trava os limites entre o LED 1 (Ponta de baixo) e 11 (Ponta de cima)
-    if (ledValue < 1) ledValue = 1;
-    if (ledValue > 11) ledValue = 11;
+    var ledValue = NumarkNS6.bpmMeterLedValue(
+        bpm1,
+        bpm2,
+        engine.getValue(leftGroup, "rateRange"),
+        engine.getValue(rightGroup, "rateRange")
+    );
 
     // Só envia o comando se o LED realmente precisar mudar de lugar (Poupa a CPU)
     if (ledValue !== NumarkNS6.lastBpmLed) {
@@ -1538,7 +1994,6 @@ NumarkNS6.shutdown = function () {
         engine.stopTimer(NumarkNS6.heartbeatTimer);
         NumarkNS6.heartbeatTimer = 0;
     }
-
     // Libera os motores dos pratos e cancela os timers de scrub de cada deck.
     for (var deckNum = 1; deckNum <= 4; deckNum++) {
         var deck = NumarkNS6.Decks[deckNum];
@@ -1555,6 +2010,7 @@ NumarkNS6.shutdown = function () {
             engine.stopTimer(deck.playbackGuardTimer);
             deck.playbackGuardTimer = 0;
         }
+        deck.scratchReleasePending = false;
         deck.isAutoScrubbing = false;
         engine.scratchDisable(deckNum);
     }

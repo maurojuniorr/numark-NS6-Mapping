@@ -1,100 +1,59 @@
-# Numark NS6 Mapping for Mixxx 🎧
+# Mapeamento Numark NS6 para Mixxx
 
-Este projeto visa entregar um mapeamento de nível profissional para a **Numark NS6** no **Mixxx**, garantindo estabilidade e alta performance (Padrão Club) para DJs que utilizam o ecossistema open-source.
+Este repositório contém um mapeamento independente da controladora original Numark NS6 de quatro canais para o Mixxx. O projeto é baseado no protocolo MIDI da NS6 e em testes com o hardware; ele não faz parte do driver de áudio para macOS nem do driver Linux.
 
-> [!WARNING] > **ESTADO ATUAL: VERSÃO BETA (v1.0)**
-> O mapeamento está altamente funcional. O motor de áudio, transporte, física dos pratos e sistema de LEDs complexos (FX, Loops e Navegação) estão operantes. Os testes em ambiente de performance ao vivo são por sua conta e risco!
+O mapeamento segue em desenvolvimento ativo. Foi usado com o Mixxx no macOS e validado com capturas MIDI e testes automatizados, mas o comportamento pode variar conforme a versão do Mixxx e o firmware. Teste as mudanças antes de usá-las em um set ao vivo e relate problemas reproduzíveis nas Issues do GitHub.
 
----
+## Funcionalidades atuais
 
-## 🔥 O Poder do Botão SHIFT (Funções Ocultas)
+### Decks e mixer
 
-O mapeamento foi desenhado para dobrar as capacidades da controladora sem poluir o painel. Segure o botão **SHIFT** de um deck e pressione os botões abaixo para acessar a segunda camada do Mixxx:
+- Seleção de camadas para os quatro decks; os LEDs de layer acompanham os decks selecionados.
+- Play, pause, Cue, hotcues, sync, reverse, loops, beatjump, keylock e carregamento de faixas.
+- PFL exclusivo: ao selecionar um deck, o PFL dos demais é desligado. Os LEDs de PFL são controlados pelo mixer físico da NS6.
+- Faders de volume dos canais usam os valores MIDI de 14 bits (MSB/LSB), com tratamento das extremidades para chegar ao mínimo e ao máximo sem retorno indevido.
+- O crossfader físico permanece como controle separado de 14 bits. O knob **X-Fader** da NS6 ajusta a curva do crossfader no Mixxx.
+- Knobs de volume Master, volume dos fones e CUE/MIX dos fones são mapeados separadamente. CUE/MIX usa o par CC de 14 bits.
 
-| Pressione SHIFT +        | O que acontece no Mixxx                                                         |
-| ------------------------ | ------------------------------------------------------------------------------- |
-| **Knob de GAIN**         | Transforma o Ganho no botão de **Filtro** (Low-pass / High-pass).               |
-| **SYNC**                 | Liga / Desliga o modo **Quantize** (Crava suas ações na batida).                |
-| **CUE**                  | Ativa / Desativa o modo **Intro Start**.                                        |
-| **LOAD**                 | **Ejeta** a música carregada do deck.                                           |
-| **REVERSE**              | **Censor / Reverse Roll** (Toca invertido, mas pula pro tempo certo ao soltar). |
-| **KEYLOCK**              | **Sync Key** (Sincroniza o tom da música harmonicamente com o outro deck).      |
-| **PITCH BEND (+ / -)**   | Empurra ou freia a batida de forma muito mais **fina e suave**.                 |
-| **HOTCUES (1 a 5)**      | **Deleta** o Ponto de Cue correspondente.                                       |
-| **Encoder (Pressionar)** | Liga / Desliga o **AutoDJ**.                                                    |
-| **VIEW**                 | Alterna a visualização das **Waveforms** na tela.                               |
-| **FX ON/OFF**            | Liga / Desliga o **Efeito 2** do Rack (sem o Shift, controla o Efeito 1).       |
+### Jog wheels e pitch
 
----
+- Leitura de posição dos jogs em 14 bits nos quatro decks, com scratch, busca de faixa com a música pausada e handoff de volta à reprodução.
+- Um giro rápido para trás pode continuar como backspin; solturas normais de scratch retornam à reprodução sem enviar um toggle de Play. Scratch em deck pausado mantém a faixa pausada.
+- O tempo de início do Play pode ser configurado nas opções do controlador no Mixxx. Zero mantém o início instantâneo.
+- Os ranges de pitch alternam entre ±8%, ±16% e ±50%. O mapeamento inclui LEDs de centro do pitch e orientação para beatmatch.
 
-## ✅ O que já está funcional (Beta 1.0)
+### Biblioteca e LEDs
 
-### 🎚️ Mixer e Controle de Áudio
+- **Crates** coloca o foco na árvore lateral da biblioteca; **Files** coloca o foco no campo de busca. Os LEDs acompanham o painel focado, e os botões preservam o modo visual atual, tanto no layout normal quanto na Big Library.
+- **Prepare** alterna a Big Library. Seu LED acompanha esse modo e permanece aceso ao alternar entre Crates e Files dentro da Big Library.
+- **View** alterna entre layouts de dois e quatro decks.
+- O encoder central navega pela biblioteca; pressioná-lo expande ou recolhe o item lateral selecionado. O controle Load Prepare adiciona a faixa selecionada ao Auto DJ.
+- Há retorno por LEDs para jog rings, touch strips, transporte, loops, efeitos e indicadores do mixer, conforme suportado pela NS6.
 
--   **Canais e Volumes:** Faders de volume e crossfader com resposta linear, incluindo suporte a **Fader Start** (via botões laterais do crossfader). _Nota: Os VU Meters da NS6 operam de forma nativa via hardware._
--   **EQ de 3 Bandas e Filtro:** Controle preciso de frequências. O Knob de Gain controla o volume e o Filtro Rápido (via _Shift_).
--   **Monitoramento PFL (Cue):** Sistema de pré-escuta por canal nos fones de ouvido totalmente funcional.
+## Instalação
 
-### 🕹️ Transporte e Física dos Pratos (Jogwheels)
+1. Baixe `Numark NS6.midi.xml` e `Numark-NS6-scripts.js` deste repositório.
+2. Copie os dois arquivos para a pasta de controladores do Mixxx:
+   - macOS: `~/Library/Application Support/Mixxx/controllers/`
+   - Linux: `~/.mixxx/controllers/`
+   - Windows: `%LOCALAPPDATA%\Mixxx\controllers\`
+3. Nas preferências do Mixxx, abra **Controllers**, selecione **Numark NS6** e ative a controladora.
+4. Recarregue o mapeamento ou reinicie o Mixxx depois de substituir os arquivos.
 
--   **High-Res Jogs (14-bits):** Processamento MSB/LSB de altíssima precisão.
--   **Física Híbrida (Vinil vs CDJ):**
--   _Modo Scratch:_ Resposta agressiva, sem _delay_ ou efeito elástico (_Zero Momentum_).
--   _Modo CDJ (Pausado):_ Ao girar o prato com a música pausada, o motor engata uma engrenagem pesada (Multiplicador 10x) para _Frame Search_ e _Scrubbing_ de áudio milimétrico, idêntico aos CDJs da Pioneer.
+O mapeamento requer Mixxx 2.5 ou posterior. Faça uma cópia dos arquivos atuais antes de atualizar.
 
--   **Smart LED Engine:** Animação de boot personalizada e feedback visual de estados de Play/Cue (_Blink_ e pulso).
--   **Jog Ring Animado:** Rotação virtual do anel de LEDs a 33 1/3 RPM e alerta visual de fim de faixa (_Track End Warning_) exato.
+## Testes
 
-### 🎼 Pitch, Tom e Tempo
+O repositório inclui testes Node.js para o protocolo MIDI e o comportamento do mapeamento. Execute-os na raiz do projeto:
 
--   **Pitch Slide (Fader):** Controle de velocidade de alta resolução e **Pitch Range** alternável.
--   **BPM Meter Absoluto:** A régua de LEDs central calcula e exibe visualmente a diferença matemática de BPM entre os canais 1 e 2, facilitando o Beatmatch de olho.
--   **Harmonic Sync & Keylock:** Sincronização avançada de tom.
+```sh
+node --test tests/*.test.cjs
+```
 
-### 🔁 Motor de Looping Avançado
+Os testes automatizados não substituem o teste com a NS6. LEDs, resposta dos jogs e comportamento de áudio devem ser conferidos no hardware de destino.
 
--   **Modo Dual:** Alternância via botão físico entre AutoLoop (LEDs de tamanho) e Manual (In/Out clássicos).
--   **Instant Trigger:** Botões de 1 a 8 batidas que setam e ativam o loop em um clique.
--   **Ferramentas de Loop:** Botões **1/2x**, **2x** e **Loop Shift** (< e >) funcionais.
+## Contribuições
 
-### 🚀 Performance, Efeitos e Biblioteca
+Relatos de bugs e pull requests são bem-vindos. Ao relatar um problema, inclua a versão do Mixxx, o sistema operacional, a sequência exata de controles e, se possível, dados do MIDI Monitor ou log do Mixxx.
 
--   **Busca Tátil (Touch Strip):** Navegação rápida na track (_Needle Drop_) com **LEDs de posição** acompanhando o tempo da música.
--   **Navegação de Library & AutoDJ:** Encoder central otimizado. Botão **Load Prepare** adiciona a música diretamente ao final da fila do **AutoDJ**.
--   **Gestão de Tela (Views e Skins):** Botões **Crates**, **Prepare** e **Files** abrem e fecham dinamicamente as janelas de **Efeitos**, **Mixer** e **Samplers** na interface.
--   **Módulo de FX Completo:** Roteamento e controle do knob principal (Mix) para os Effect Racks 1 e 2.
--   **Beatgrid Pro & Skip:** Ajuste manual do grid, modo **Slip** e botões de pulo de batida (_Beatjump_).
-
----
-
-## 🛠️ O que falta mapear (Aguardando sugestões da comunidade!)
-
-O mapeamento base e a física estão cravados. Para as próximas atualizações, estamos buscando ideias criativas para aprimorar os seguintes botões:
-
--   🔘 **Click do FX Select (Pressionar o Encoder de Efeito):** O giro seleciona/ajusta o efeito, mas o _clique_ (Push) deste botão ainda aguarda uma funcionalidade matadora.
--   📂 **Botões Crates, Prepare e Files:** Devido a limitações nativas na arquitetura da biblioteca do Mixxx (não há um comando MIDI direto para pular o cursor de navegação exclusivamente para as abas Crates, AutoDJ ou Arquivos), nós adaptamos esses botões de forma criativa: atualmente eles abrem e fecham as janelas de **Efeitos, Mixer e Samplers** na tela. Ainda assim, estamos abertos a ideias melhores ou algum "hack" de código que torne o uso deles (ou com _Shift_) ainda mais útil para a performance.
-
-💡 **Tem uma ideia boa ou sabe como contornar as limitações da barra lateral?** Abra uma _Issue_ no repositório ou mande um Pull Request!
-
----
-
-## 📥 Como Instalar
-
-1. Baixe os arquivos `.xml` e `.js` deste repositório.
-2. Copie-os para a pasta de controladores do seu Mixxx:
-
--   **Linux:** `~/.mixxx/controllers/`
--   **Windows:** `%LOCALAPPDATA%\Mixxx\controllers\`
--   **macOS:** `~/Library/Application Support/Mixxx/controllers/`
-
-3. Nas preferências do Mixxx, ative o controlador e selecione o mapeamento **"Numark NS6"**.
-
----
-
-## 🤝 Contribuições
-
-Contribuições são muito bem-vindas! Sinta-se à vontade para abrir um Pull Request ou relatar bugs nas _Issues_.
-
-**Desenvolvido com ❤️ por:** [@maurojuniorr](https://www.instagram.com/maurojuniorr) | [@omaurodj](https://www.instagram.com/omaurodj) e Gemini (IA)
-
-_Esposo, Pai, Programador, Professor, Pesquisador e DJ._
+Desenvolvido por [@maurojuniorr](https://github.com/maurojuniorr), com agradecimentos à comunidade Mixxx e aos colaboradores da NS6 que compartilharam descobertas do protocolo e dados de teste.

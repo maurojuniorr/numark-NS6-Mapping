@@ -1,11 +1,29 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<MixxxControllerPreset mixxxVersion="2.1.0+" schemaVersion="1">
+<MixxxControllerPreset mixxxVersion="2.5.0+" schemaVersion="1">
   <info>
       <name>Numark NS6</name>
       <author>maurojuniorr</author>
       <description>4 channel MIDI Mapping for Numark NS6</description>
       <manual>numark_ns6</manual>
   </info>
+  <settings>
+    <group label="Playback">
+      <option
+        variable="playStartFactor"
+        type="real"
+        default="0"
+        min="0"
+        max="6"
+        step="0.25"
+        precision="2"
+        label="Start Time">
+        <description>
+          Adjusts how quickly a deck accelerates when PLAY is pressed while paused. Zero starts instantly; higher values make the soft start faster.
+          After a jog release, the mapping follows the platter's actual remaining movement and returns to normal playback when that movement stops.
+        </description>
+      </option>
+    </group>
+  </settings>
   <controller id="NS6 MIDI 1">
     <scriptfiles>
       <file filename="common-controller-scripts.js"/>
@@ -1563,7 +1581,7 @@
         <options><script-binding /></options>
       </control>
       <control>
-        <group>[Channel1]</group>
+        <group>[Channel2]</group>
         <key>NumarkNS6.Decks[1].pflButton.input</key>
         <status>0x90</status>
         <midino>0x31</midino>
@@ -1572,7 +1590,7 @@
         </options>
       </control>
       <control>
-        <group>[Channel2]</group>
+        <group>[Channel1]</group>
         <key>NumarkNS6.Decks[2].pflButton.input</key>
         <status>0x90</status>
         <midino>0x32</midino>
@@ -1599,7 +1617,7 @@
         </options>
       </control>
       <control>
-        <group>[Channel1]</group>
+        <group>[Channel2]</group>
         <key>NumarkNS6.Decks[1].pflButton.input</key>
         <status>0x80</status>
         <midino>0x31</midino>
@@ -1608,7 +1626,7 @@
         </options>
       </control>
       <control>
-        <group>[Channel2]</group>
+        <group>[Channel1]</group>
         <key>NumarkNS6.Decks[2].pflButton.input</key>
         <status>0x80</status>
         <midino>0x32</midino>
@@ -1705,35 +1723,6 @@
         <options>
           <script-binding />
         </options>
-      </control>
-      <!-- NS6 occasionally emits a CUE Note Off as 0x8n 0x7D 0x7D. -->
-      <control>
-        <group>[Channel1]</group>
-        <key>NumarkNS6.Decks[1].cueMalformedRelease</key>
-        <status>0x81</status>
-        <midino>0x7D</midino>
-        <options><script-binding /></options>
-      </control>
-      <control>
-        <group>[Channel2]</group>
-        <key>NumarkNS6.Decks[2].cueMalformedRelease</key>
-        <status>0x82</status>
-        <midino>0x7D</midino>
-        <options><script-binding /></options>
-      </control>
-      <control>
-        <group>[Channel3]</group>
-        <key>NumarkNS6.Decks[3].cueMalformedRelease</key>
-        <status>0x83</status>
-        <midino>0x7D</midino>
-        <options><script-binding /></options>
-      </control>
-      <control>
-        <group>[Channel4]</group>
-        <key>NumarkNS6.Decks[4].cueMalformedRelease</key>
-        <status>0x84</status>
-        <midino>0x7D</midino>
-        <options><script-binding /></options>
       </control>
      
       <control>
@@ -1868,6 +1857,31 @@
         <options>
           <script-binding />
         </options>
+      </control>
+      <!-- One shared binding repairs PLAY, CUE, or jog touch release. -->
+      <control>
+        <group>[Channel1]</group>
+        <key>NumarkNS6.Decks[1].transportMalformedRelease</key>
+        <status>0x81</status><midino>0x7D</midino>
+        <options><script-binding/></options>
+      </control>
+      <control>
+        <group>[Channel2]</group>
+        <key>NumarkNS6.Decks[2].transportMalformedRelease</key>
+        <status>0x82</status><midino>0x7D</midino>
+        <options><script-binding/></options>
+      </control>
+      <control>
+        <group>[Channel3]</group>
+        <key>NumarkNS6.Decks[3].transportMalformedRelease</key>
+        <status>0x83</status><midino>0x7D</midino>
+        <options><script-binding/></options>
+      </control>
+      <control>
+        <group>[Channel4]</group>
+        <key>NumarkNS6.Decks[4].transportMalformedRelease</key>
+        <status>0x84</status><midino>0x7D</midino>
+        <options><script-binding/></options>
       </control>
       <control>
         <group>[Channel1]</group>
@@ -2557,6 +2571,44 @@
         <midino>0x27</midino>
         <options><script-binding/></options>
       </control>
+      <control>
+        <group>[Mixer Profile]</group>
+        <key>NumarkNS6.setXfaderCurve</key>
+        <status>0xB0</status>
+        <midino>0x55</midino>
+        <options><script-binding/></options>
+        <description>NS6 X-Fader slope knob controls the Mixxx crossfader curve</description>
+      </control>
+      <control>
+        <group>[Master]</group>
+        <key>gain</key>
+        <status>0xB0</status>
+        <midino>0x43</midino>
+        <description>NS6 MASTER knob: CC 67 controls Mixxx Master volume</description>
+      </control>
+      <control>
+        <group>[Master]</group>
+        <key>headGain</key>
+        <status>0xB0</status>
+        <midino>0x42</midino>
+        <description>NS6 headphone level knob: CC 66 controls Mixxx headphone volume</description>
+      </control>
+      <control>
+        <group>[Master]</group>
+        <key>headMix</key>
+        <status>0xB0</status>
+        <midino>0x12</midino>
+        <options><fourteen-bit-msb/></options>
+        <description>NS6 headphone CUE/MIX knob: CC 18 MSB</description>
+      </control>
+      <control>
+        <group>[Master]</group>
+        <key>headMix</key>
+        <status>0xB0</status>
+        <midino>0x32</midino>
+        <options><fourteen-bit-lsb/></options>
+        <description>NS6 headphone CUE/MIX knob: CC 50 LSB</description>
+      </control>
       <!--mixer knobs-->
       <control>
         <group>[EqualizerRack1_[Channel1]_Effect1]</group>
@@ -2931,24 +2983,18 @@
       </control>
       <control>
         <group>[Channel4]</group>
-        <key>volume</key>
+        <key>NumarkNS6.deck4VolumeLSB</key>
         <status>0xB0</status>
         <midino>0x38</midino>
-        <options>
-          <fourteen-bit-lsb/>
-          <Soft-takeover/>
-        </options>
+        <options><script-binding/></options>
         <description>Channel4 Volume LSB</description>
       </control>
       <control>
         <group>[Channel4]</group>
-        <key>volume</key>
+        <key>NumarkNS6.deck4VolumeMSB</key>
         <status>0xB0</status>
         <midino>0x18</midino>
-        <options>
-          <fourteen-bit-msb/>
-          <Soft-takeover/>
-        </options>
+        <options><script-binding/></options>
         <description>Channel4 Volume MSB</description>
       </control>
       <!-- Bpm Slider -->
