@@ -1,8 +1,12 @@
-# Mapeamento Numark NS6 para Mixxx
+# Numark NS6 para Mixxx
 
-Este repositório contém um mapeamento independente da controladora original Numark NS6 de quatro canais para o Mixxx. O projeto é baseado no protocolo MIDI da NS6 e em testes com o hardware; ele não faz parte do driver de áudio para macOS nem do driver Linux.
+Um mapeamento completo da Numark NS6 original de quatro canais para o Mixxx, desenvolvido e ajustado com a controladora física. O objetivo é fazer os controles responderem de forma natural e precisa, aproveitando a superfície da NS6 para mixar, navegar pela biblioteca e tocar com os quatro decks.
 
-O mapeamento segue em desenvolvimento ativo. Foi usado com o Mixxx no macOS e validado com capturas MIDI e testes automatizados, mas o comportamento pode variar conforme a versão do Mixxx e o firmware. Teste as mudanças antes de usá-las em um set ao vivo e relate problemas reproduzíveis nas Issues do GitHub.
+Os jogs foram refinados por meio de testes de scratch e movimentos reais no hardware. A leitura de alta resolução deixa a resposta ágil e controlável; a soltura normal volta à música sem deixar a inércia do prato alterar a reprodução, enquanto um giro rápido para trás pode continuar como backspin. A resposta foi ajustada para se aproximar da sensação do mapeamento nativo da controladora.
+
+O projeto também reúne controles de transporte, mixer, fones, efeitos, biblioteca e LEDs. Correções feitas durante os testes resolveram comportamentos imprevisíveis de Play/Cue, soltura dos jogs, extremos dos faders e sincronização dos LEDs. O mapeamento é independente dos drivers de áudio para macOS e Linux.
+
+Desenvolvido e testado com uma Numark NS6 original e Mixxx. Algumas funções dependem dos recursos oferecidos pelo Mixxx e podem variar conforme a versão. Relatos e contribuições são bem-vindos.
 
 ## Funcionalidades atuais
 
@@ -17,8 +21,10 @@ O mapeamento segue em desenvolvimento ativo. Foi usado com o Mixxx no macOS e va
 
 ### Jog wheels e pitch
 
-- Leitura de posição dos jogs em 14 bits nos quatro decks, com scratch, busca de faixa com a música pausada e handoff de volta à reprodução.
-- Um giro rápido para trás pode continuar como backspin; solturas normais de scratch retornam à reprodução sem enviar um toggle de Play. Scratch em deck pausado mantém a faixa pausada.
+- Jogs responsivos nos quatro decks, com leitura de posição em 14 bits, scratch, pitch bend e busca de faixa com a música pausada.
+- A soltura normal do scratch retorna à reprodução sem arrasto da inércia do jog. Um giro rápido para trás pode continuar como backspin.
+- O comportamento de scratch e soltura foi ajustado para uma resposta natural, próxima à sensação do mapeamento nativo da NS6.
+- Play, Cue e hotcues foram ajustados para responder de forma consistente durante o uso.
 - O tempo de início do Play pode ser configurado nas opções do controlador no Mixxx. Zero mantém o início instantâneo.
 - Os ranges de pitch alternam entre ±8%, ±16% e ±50%. O mapeamento inclui LEDs de centro do pitch e orientação para beatmatch.
 
@@ -61,8 +67,8 @@ Os controles de deck abaixo se repetem nos quatro decks. Os botões **SHIFT** e 
 | **PITCH BEND − / +** | Faz pitch bend temporário para baixo/cima; com SHIFT usa os passos menores. |
 | **PITCH RANGE** | Percorre os ranges ±8%, ±16% e ±50%. |
 | **Pitch fader** | Controla a taxa de reprodução (`rate`) com leitura MIDI de 14 bits. O LED central indica pitch em zero; as setas orientam o ajuste de BPM entre os decks ativos. |
-| **JOG — borda** | Ajusta a posição/bend conforme reprodução e modo; no modo scratch, o script processa toque, movimento, soltura, handoff e backspin. |
-| **JOG — toque no topo** | Inicia o scratch enquanto tocado; soltura retoma a reprodução somente se o deck estava tocando antes do scratch. |
+| **JOG — borda** | Responde ao giro para pitch bend ou scratch, conforme o modo. Movimentos rápidos para trás podem continuar como backspin. |
+| **JOG — toque no topo** | Inicia o scratch enquanto tocado. Ao soltar, a reprodução volta sem ser arrastada pela inércia do jog. |
 | **SCRATCH** | Alterna o modo scratch do jog. |
 | **STRIP SEARCH** | Salta para a posição indicada pela touch strip. |
 | **REVERSE** | Alterna reverse; **SHIFT + segurar** ativa Reverse Roll enquanto pressionado. |
@@ -133,4 +139,4 @@ O mapeamento requer Mixxx 2.5 ou posterior. Faça uma cópia dos arquivos atuais
 
 Relatos de bugs e pull requests são bem-vindos. Ao relatar um problema, inclua a versão do Mixxx, o sistema operacional, a sequência exata de controles e, se possível, dados do MIDI Monitor ou log do Mixxx.
 
-Desenvolvido por [@maurojuniorr](https://github.com/maurojuniorr), com agradecimentos à comunidade Mixxx e aos colaboradores da NS6 que compartilharam descobertas do protocolo e dados de teste.
+Desenvolvido por [@maurojuniorr](https://github.com/maurojuniorr), com contribuições do OpenAI Codex no desenvolvimento e na documentação do mapeamento. Agradecimentos à comunidade Mixxx e aos colaboradores da NS6 que compartilharam descobertas do protocolo e dados de teste.
