@@ -33,8 +33,9 @@ Desenvolvido e testado com uma Numark NS6 original e Mixxx. Algumas funções de
 - **Crates** coloca o foco na árvore lateral da biblioteca; **Files** coloca o foco no campo de busca. Os LEDs acompanham o painel focado, e os botões preservam o modo visual atual, tanto no layout normal quanto na Big Library.
 - **Prepare** alterna a Big Library. Seu LED acompanha esse modo e permanece aceso ao alternar entre Crates e Files dentro da Big Library.
 - **View** alterna entre layouts de dois e quatro decks.
-- O encoder central navega pela biblioteca; pressioná-lo expande ou recolhe o item lateral selecionado. O controle Load Prepare adiciona a faixa selecionada ao Auto DJ.
+- O encoder central mantém o contexto de navegação entre árvore de playlists e lista de faixas; pressioná-lo expande ou recolhe o item lateral selecionado. O controle Load Prepare adiciona a faixa selecionada ao Auto DJ.
 - Há retorno por LEDs para jog rings, touch strips, transporte, loops, efeitos e indicadores do mixer, conforme suportado pela NS6.
+- O feedback dos LEDs evita retransmitir estados idênticos continuamente e atualiza os indicadores do deck ao trocar as camadas 1/3 e 2/4.
 
 ## Tabela de controles
 

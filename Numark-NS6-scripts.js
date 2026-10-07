@@ -11,6 +11,26 @@ NumarkNS6.displayTimer = 0;
 NumarkNS6.navTimer = 0;
 NumarkNS6.heartbeatTimer = 0;
 NumarkNS6.bridgeHeartbeat = [0xF0, 0x7D, 0x4E, 0x53, 0x36, 0x48, 0xF7];
+NumarkNS6.ledCache = {};
+NumarkNS6.ledRefreshMs = 2000;
+NumarkNS6.sendLed = function(status, control, value) {
+    var key = status + ":" + control;
+    var now = Date.now();
+    var previous = NumarkNS6.ledCache[key];
+    if (previous && previous.value === value && now - previous.sentAt < NumarkNS6.ledRefreshMs) return;
+    midi.sendShortMsg(status, control, value);
+    NumarkNS6.ledCache[key] = { value: value, sentAt: now };
+};
+NumarkNS6.refreshDeckLeds = function(deckNum) {
+    var deck = NumarkNS6.Decks[deckNum];
+    if (!deck) return;
+    var status = 0xB0 + deck.midiChannel;
+    delete NumarkNS6.ledCache[status + ":7"];
+    delete NumarkNS6.ledCache[status + ":8"];
+    delete NumarkNS6.ledCache[status + ":9"];
+    NumarkNS6.updatePlayCueLEDs(deckNum, deck.midiChannel);
+    NumarkNS6.updateSyncLED(deckNum, deck.midiChannel);
+};
 NumarkNS6.crossfaderChanged = false;
 NumarkNS6.activePFLDeck = 0;
 
@@ -430,8 +450,8 @@ NumarkNS6.updatePlayCueLEDs = function(deckNum, midiChannel) {
 
     var trackLoaded = engine.getValue(group, "track_loaded") > 0;
     if (!trackLoaded) {
-        midi.sendShortMsg(statusCC, 0x09, 0x00); 
-        midi.sendShortMsg(statusCC, 0x08, 0x00); 
+        NumarkNS6.sendLed(statusCC, 0x09, 0x00);
+        NumarkNS6.sendLed(statusCC, 0x08, 0x00);
         return; 
     }
 
@@ -439,28 +459,28 @@ NumarkNS6.updatePlayCueLEDs = function(deckNum, midiChannel) {
     var isCueing = engine.getValue(group, "cue_default") > 0;
 
     if (deck && deck.shiftButton && deck.shiftButton.state) {
-        midi.sendShortMsg(statusCC, 0x09, isPlaying ? 0x7F : NumarkNS6.blinkState);
+        NumarkNS6.sendLed(statusCC, 0x09, isPlaying ? 0x7F : NumarkNS6.blinkState);
         var isIntroActivating = engine.getValue(group, "intro_start_activate") > 0;
-        if (isIntroActivating) midi.sendShortMsg(statusCC, 0x08, 0x7F);
-        else if (isPlaying) midi.sendShortMsg(statusCC, 0x08, 0x00);
+        if (isIntroActivating) NumarkNS6.sendLed(statusCC, 0x08, 0x7F);
+        else if (isPlaying) NumarkNS6.sendLed(statusCC, 0x08, 0x00);
         else {
             var atIntro = false, introStartPos = engine.getValue(group, "intro_start_position");
             var trackSamples = engine.getValue(group, "track_samples"), playPos = engine.getValue(group, "playposition");
             if (trackSamples > 0 && introStartPos !== -1) if (Math.abs((playPos * trackSamples) - introStartPos) < 5000) atIntro = true;
-            midi.sendShortMsg(statusCC, 0x08, atIntro ? 0x7F : 0x00);
+            NumarkNS6.sendLed(statusCC, 0x08, atIntro ? 0x7F : 0x00);
         }
         return; 
     }
 
-    midi.sendShortMsg(statusCC, 0x09, isPlaying ? 0x7F : NumarkNS6.blinkState);
-    if (isCueing) midi.sendShortMsg(statusCC, 0x08, 0x7F);
-    else if (isPlaying) midi.sendShortMsg(statusCC, 0x08, 0x00);
+    NumarkNS6.sendLed(statusCC, 0x09, isPlaying ? 0x7F : NumarkNS6.blinkState);
+    if (isCueing) NumarkNS6.sendLed(statusCC, 0x08, 0x7F);
+    else if (isPlaying) NumarkNS6.sendLed(statusCC, 0x08, 0x00);
     else {
         var atCue = false, playPos = engine.getValue(group, "playposition");
         var cuePoint = engine.getValue(group, "cue_point"), trackSamples = engine.getValue(group, "track_samples");
         if (trackSamples > 0 && cuePoint !== -1) { if (Math.abs((playPos * trackSamples) - cuePoint) < 5000) atCue = true; } 
         else if (playPos <= 0.005) atCue = true;
-        midi.sendShortMsg(statusCC, 0x08, atCue ? 0x7F : NumarkNS6.blinkState);
+        NumarkNS6.sendLed(statusCC, 0x08, atCue ? 0x7F : NumarkNS6.blinkState);
     }
 };
 
@@ -471,13 +491,13 @@ NumarkNS6.updateSyncLED = function(deckNum, midiChannel) {
     if (!deck) return;
 
     if (deck.shiftButton && deck.shiftButton.state) {
-        midi.sendShortMsg(0xB0 + midiChannel, 0x07, engine.getValue(group, "quantize") > 0 ? 0x7F : 0x00);
+        NumarkNS6.sendLed(0xB0 + midiChannel, 0x07, engine.getValue(group, "quantize") > 0 ? 0x7F : 0x00);
         return;
     }
-    if (!engine.getValue(group, "sync_enabled")) { midi.sendShortMsg(0xB0 + midiChannel, 0x07, 0x00); return; }
+    if (!engine.getValue(group, "sync_enabled")) { NumarkNS6.sendLed(0xB0 + midiChannel, 0x07, 0x00); return; }
     
     var isPlaying = engine.getValue(group, "play") > 0, beatActive = engine.getValue(group, "beat_active") > 0;
-    midi.sendShortMsg(0xB0 + midiChannel, 0x07, isPlaying ? (beatActive ? 0x7F : 0x00) : 0x7F);
+    NumarkNS6.sendLed(0xB0 + midiChannel, 0x07, isPlaying ? (beatActive ? 0x7F : 0x00) : 0x7F);
 };
 
 NumarkNS6.updateReverseLED = function(deckNum) {
@@ -788,6 +808,7 @@ NumarkNS6.bootAnimation = function () {
 // Variáveis globais para a régua de BPM saber quem está visível
 NumarkNS6.leftDeck = 1;
 NumarkNS6.rightDeck = 2;
+NumarkNS6.navTarget = 1;
 NumarkNS6.toggleBigLibrary = function() {
     var nextState = engine.getValue("[Skin]", "show_maximized_library") > 0 ? 0 : 1;
     engine.setValue("[Skin]", "show_maximized_library", nextState);
@@ -795,15 +816,37 @@ NumarkNS6.toggleBigLibrary = function() {
 };
 // Mixxx 2.4+: focused_widget 1 is Search and 2 is the library tree/sidebar.
 NumarkNS6.focusLibraryWidget = function(widget) {
+    if (widget === 1 || widget === 2) NumarkNS6.navTarget = widget;
     engine.setValue("[Library]", "focused_widget", widget);
+};
+NumarkNS6.navigateLibrary = function(direction) {
+    var focusedWidget = engine.getValue("[Library]", "focused_widget");
+    if (focusedWidget === 0) {
+        var key = NumarkNS6.navTarget === 2 ? "SelectPlaylist" : "SelectTrackKnob";
+        engine.setValue("[Playlist]", key, direction);
+    } else {
+        engine.setValue("[Library]", "MoveVertical", direction);
+    }
+};
+NumarkNS6.moveLibraryFocus = function(direction, backwards) {
+    if (engine.getValue("[Library]", "focused_widget") === 0) {
+        NumarkNS6.navTarget = direction < 0 ? 2 : 1;
+        NumarkNS6.updateNavLEDs();
+    } else if (backwards) {
+        engine.setValue("[Library]", "MoveFocusBackward", 1);
+    } else {
+        engine.setValue("[Library]", "MoveFocus", direction);
+    }
 };
 NumarkNS6.updateNavLEDs = function() {
     var focusedWidget = engine.getValue("[Library]", "focused_widget");
+    if (focusedWidget === 1 || focusedWidget === 2) NumarkNS6.navTarget = focusedWidget;
+    if (focusedWidget === 0) focusedWidget = NumarkNS6.navTarget;
     var isBigLibrary = engine.getValue("[Skin]", "show_maximized_library") > 0;
-    midi.sendShortMsg(0xB0, 0x01, 0x7F); // VIEW
-    midi.sendShortMsg(0xB0, 0x03, focusedWidget === 2 ? 0x7F : 0x00); // CRATES: tree/sidebar
-    midi.sendShortMsg(0xB0, 0x04, isBigLibrary ? 0x7F : 0x00); // PREPARE: Big Library state
-    midi.sendShortMsg(0xB0, 0x05, focusedWidget === 1 ? 0x7F : 0x00); // FILES: search
+    NumarkNS6.sendLed(0xB0, 0x01, 0x7F); // VIEW
+    NumarkNS6.sendLed(0xB0, 0x03, focusedWidget === 2 ? 0x7F : 0x00); // CRATES: tree/sidebar
+    NumarkNS6.sendLed(0xB0, 0x04, isBigLibrary ? 0x7F : 0x00); // PREPARE: Big Library state
+    NumarkNS6.sendLed(0xB0, 0x05, focusedWidget === 1 ? 0x7F : 0x00); // FILES: search
 };
 NumarkNS6.toggleDeckLayout = function() {
     var nextState = engine.getValue("[Skin]", "show_4decks") > 0 ? 0 : 1;
@@ -828,6 +871,7 @@ this.deckChangeR = new components.Button({
     input: function(_c, _ctrl, value) { 
         NumarkNS6.rightDeck = (value > 0) ? 4 : 2; 
         NumarkNS6.syncLayerLEDs();
+        NumarkNS6.refreshDeckLeds(NumarkNS6.rightDeck);
         
         if (typeof NumarkNS6.updateBpmMeter === "function") NumarkNS6.updateBpmMeter(); 
     } 
@@ -839,6 +883,7 @@ this.deckChangeL = new components.Button({
     input: function(_c, _ctrl, value) { 
         NumarkNS6.leftDeck = (value > 0) ? 3 : 1; 
         NumarkNS6.syncLayerLEDs();
+        NumarkNS6.refreshDeckLeds(NumarkNS6.leftDeck);
         
         if (typeof NumarkNS6.updateBpmMeter === "function") NumarkNS6.updateBpmMeter(); 
     } 
@@ -865,7 +910,7 @@ this.deckChangeL = new components.Button({
         }
     });
 
-    this.navigationEncoderTick = new components.Encoder({ midi: [0xB0, 0x44], group: "[Library]", input: function (ch, ctrl, val) { engine.setValue("[Library]", "MoveVertical", val < 64 ? 1 : -1); } });
+    this.navigationEncoderTick = new components.Encoder({ midi: [0xB0, 0x44], group: "[Library]", input: function (ch, ctrl, val) { NumarkNS6.navigateLibrary(val < 64 ? 1 : -1); } });
     this.autoDjAddButton = new components.Button({ midi: [0x90, 0x0D], group: "[AutoDJ]", input: function (ch, ctrl, val) { if (val === 0) return; engine.setValue("[Library]", "AutoDjAddBottom", 1); } });
 
     // this.backButton = new components.Button({ midi: [0x90, 0x06], group: "[Library]", input: function (ch, ctrl, value) { if (value > 0) engine.setValue("[Library]", "MoveFocus", -1); } });
@@ -944,10 +989,10 @@ this.deckChangeL = new components.Button({
                 }
                 
                 if (isShifted) {
-                    engine.setValue("[Library]", "MoveFocusBackward", 1);
+                    NumarkNS6.moveLibraryFocus(-1, true);
                 } else {
                     // FUNÇÃO ORIGINAL: Apenas volta o foco de navegação
-                    engine.setValue("[Library]", "MoveFocus", -1);
+                    NumarkNS6.moveLibraryFocus(-1, false);
                 }
             }
         } 
@@ -959,7 +1004,7 @@ this.deckChangeL = new components.Button({
         input: function (ch, ctrl, value) { 
             if (value > 0) {
                 // FUNÇÃO ORIGINAL: Apenas avança o foco de navegação
-                engine.setValue("[Library]", "MoveFocus", 1);
+                NumarkNS6.moveLibraryFocus(1, false);
             }
         } 
     });
