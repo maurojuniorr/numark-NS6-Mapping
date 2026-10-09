@@ -18,6 +18,8 @@ Desenvolvido e testado com uma Numark NS6 original e Mixxx. Algumas funções de
 - Faders de volume dos canais usam os valores MIDI de 14 bits (MSB/LSB), com tratamento das extremidades para chegar ao mínimo e ao máximo sem retorno indevido.
 - O crossfader físico permanece como controle separado de 14 bits. O knob **X-Fader** da NS6 ajusta a curva do crossfader no Mixxx.
 - Knobs de volume Master, volume dos fones e CUE/MIX dos fones são mapeados separadamente. CUE/MIX usa o par CC de 14 bits.
+- O switch físico Split Cue envia Note On/Off no canal 1, nota 0; o mapping espelha esse estado no Mixxx. O knob CUE/MIX continua controlando a mistura de pré-escuta e master.
+- Os switches Fader Start esquerdo e direito também seguem o estado Note On/Off da NS6, sem exigir um segundo aperto para desligar.
 
 ### Jog wheels e pitch
 
@@ -33,7 +35,7 @@ Desenvolvido e testado com uma Numark NS6 original e Mixxx. Algumas funções de
 - **Crates** coloca o foco na árvore lateral da biblioteca; **Files** coloca o foco no campo de busca. Os LEDs acompanham o painel focado, e os botões preservam o modo visual atual, tanto no layout normal quanto na Big Library.
 - **Prepare** alterna a Big Library. Seu LED acompanha esse modo e permanece aceso ao alternar entre Crates e Files dentro da Big Library.
 - **View** alterna entre layouts de dois e quatro decks.
-- O encoder central mantém o contexto de navegação entre árvore de playlists e lista de faixas; pressioná-lo expande ou recolhe o item lateral selecionado. O controle Load Prepare adiciona a faixa selecionada ao Auto DJ.
+- O encoder central mantém o contexto de navegação entre árvore de playlists e lista de faixas, inclusive quando o Mixxx está em segundo plano; pressioná-lo expande ou recolhe o item lateral selecionado. O controle Load Prepare adiciona a faixa selecionada ao Auto DJ.
 - Há retorno por LEDs para jog rings, touch strips, transporte, loops, efeitos e indicadores do mixer, conforme suportado pela NS6.
 - O feedback dos LEDs evita retransmitir estados idênticos continuamente e atualiza os indicadores do deck ao trocar as camadas 1/3 e 2/4.
 
@@ -67,7 +69,7 @@ Os controles de deck abaixo se repetem nos quatro decks. Os botões **SHIFT** e 
 | **MASTER TEMPO / KEYLOCK** | Alterna Keylock; **SHIFT + botão** aciona Sync Key. |
 | **PITCH BEND − / +** | Faz pitch bend temporário para baixo/cima; com SHIFT usa os passos menores. |
 | **PITCH RANGE** | Percorre os ranges ±8%, ±16% e ±50%. |
-| **Pitch fader** | Controla a taxa de reprodução (`rate`) com leitura MIDI de 14 bits. O LED central indica pitch em zero; as setas orientam o ajuste de BPM entre os decks ativos. |
+| **Pitch fader** | Controla a taxa de reprodução (`rate`) com leitura MIDI de 14 bits. Com SHIFT ativo, o mesmo curso ajusta o pitch em passos finos a partir do valor atual, sem salto ao voltar ao modo normal. O LED central indica pitch em zero; as setas orientam o ajuste de BPM entre os decks ativos. |
 | **JOG — borda** | Responde ao giro para pitch bend ou scratch, conforme o modo. Movimentos rápidos para trás podem continuar como backspin. |
 | **JOG — toque no topo** | Inicia o scratch enquanto tocado. Ao soltar, a reprodução volta sem ser arrastada pela inércia do jog. |
 | **SCRATCH** | Alterna o modo scratch do jog. |
@@ -91,8 +93,8 @@ Os controles de deck abaixo se repetem nos quatro decks. Os botões **SHIFT** e 
 | **Modo manual: botão 3** | Aciona Sync Key. |
 | **Modo manual: botão 4** | Sai do reloop. |
 | **SKIP (segurar) + girar o jog** | Faz beatjump em passos de um beat na direção do giro. |
-| **CLEAR/SET** | Move o marcador do beatgrid para a posição atual; **SHIFT + CLEAR/SET** apaga o marcador mais próximo. |
-| **ADJUST/SLIP + jog** | Ajusta temporariamente o beatgrid; **SHIFT + ADJUST/SLIP + jog** ajusta/estica o grid. |
+| **CLEAR/SET** | Alinha a batida mais próxima do beatgrid à posição atual; **SHIFT + CLEAR/SET** apaga um marcador do beatgrid. |
+| **ADJUST/SLIP + jog** | Desloca o beatgrid para mais cedo ou mais tarde; **SHIFT + ADJUST/SLIP + jog** ajusta o BPM médio do beatgrid em passos de 0,01. |
 | **Botão LOOP SHIFT esquerdo/direito** | Faz beatjump de −1/+1 beat. Apesar do nome físico, o mapeamento atual não desloca o loop inteiro. |
 
 ### Mixer
@@ -104,12 +106,13 @@ Os controles de deck abaixo se repetem nos quatro decks. Os botões **SHIFT** e 
 | **EQ HIGH / MID / LOW** | Controla as três bandas de equalização do canal. |
 | **Channel input 1–4** | Alterna mute do canal correspondente no Mixxx. |
 | **Crossfader físico** | Controla a posição do crossfader do Mixxx em 14 bits. |
-| **X-FADER** | Ajusta a curva do crossfader; é separado do crossfader físico. |
+| **X-FADER** | Ajusta continuamente a curva: suave à esquerda, mixagem equilibrada no centro e corte rápido à direita, como no Serato. É separado da posição do crossfader físico. |
 | **Botão de contorno do crossfader** | Alterna entre a curva de scratch e o perfil de curva salvo. |
 | **MASTER** | Controla o ganho Master do Mixxx. |
 | **Headphone LEVEL** | Controla o volume de pré-escuta. |
-| **CUE/MIX** | Controla a mistura entre cue e master nos fones em 14 bits. |
-| **Fader Start esquerdo/direito** | Habilita o início/retorno ao cue quando o crossfader cruza o extremo correspondente. |
+| **CUE/MIX — girar** | Controla a mistura entre cue e master nos fones em 14 bits. |
+| **SPLIT CUE** | Liga/desliga o Split Cue do Mixxx: cue mono à esquerda e master mono à direita. |
+| **Fader Start esquerdo/direito** | Os switches ativam/desativam o início/retorno ao cue quando o crossfader cruza o extremo correspondente; o estado de cada switch acompanha os eventos Note On e Note Off da NS6. |
 | **Layer esquerdo** | Alterna os decks 1 e 3 na camada esquerda. |
 | **Layer direito** | Alterna os decks 2 e 4 na camada direita. |
 

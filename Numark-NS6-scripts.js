@@ -73,6 +73,13 @@ NumarkNS6.isProcessingHarmonic = [null, false, false, false, false];
 // Common Serato-style tempo ranges: fine beatmatching, wider correction,
 // and an extended range for large tempo changes.
 NumarkNS6.rateRanges = [0.08, 0.16, 0.50];
+// Fine pitch mode keeps the current rate as its anchor and applies half of
+// each physical fader movement, regardless of where the slider is positioned.
+NumarkNS6.finePitchSensitivity = 0.25;
+NumarkNS6.finePitchParameterStep = function(currentParameter, previousFaderParameter, nextFaderParameter, sensitivity) {
+    if (previousFaderParameter === undefined) return currentParameter;
+    return Math.max(0, Math.min(1, currentParameter + (nextFaderParameter - previousFaderParameter) * sensitivity));
+};
 // On the original NS6, CC 0x3C / 0x3D drive the pitch-up/down arrows.
 // The NS6II uses different Note On LEDs, so do not copy its 0x09/0x0A protocol.
 NumarkNS6.pitchTakeoverLED = { OFF: 0x00, DIM: 0x40, FULL: 0x7F, UP: 0x3C, DOWN: 0x3D };
@@ -384,21 +391,29 @@ NumarkNS6.filteredPot14Bit = function (options) {
 };
 
 // The NS6 X-Fader knob is the crossfader-slope control, separate from the
-// crossfader's physical position (CC 7/39). Mixxx's xFaderCurve is logarithmic
-// over 0.6..1000, so interpolate in log space for a useful knob sweep.
+// crossfader's physical position (CC 7/39). Keep the physical center near a
+// neutral mixing curve, then move progressively toward a sharp cut on the right.
 NumarkNS6.xFaderCurveForMidiValue = function (value) {
     var normalized = Math.max(0, Math.min(127, value)) / 127.0;
-    return 0.6 * Math.pow(1000.0 / 0.6, normalized);
+    var midpoint = 0.5;
+    if (normalized <= midpoint) {
+        return 0.6 * Math.pow(1.0 / 0.6, normalized / midpoint);
+    }
+    return Math.pow(1000.0, (normalized - midpoint) / (1.0 - midpoint));
 };
 NumarkNS6.setXfaderCurve = function (channel, control, value) {
     var curve = NumarkNS6.xFaderCurveForMidiValue(value);
-    // Mixxx applies xFaderCurve in constant-power mode.
-    engine.setValue("[Mixer Profile]", "xFaderMode", 1);
-    engine.setValue("[Mixer Profile]", "xFaderCurve", curve);
-    // Keep the non-scratch profile current so the existing contour switch
-    // returns to the knob's latest setting.
+    // Mixxx applies this slope in constant-power mode. If the contour button
+    // currently holds the scratch preset, update the normal profile without
+    // interrupting that preset; it will be restored when contour is released.
     NumarkNS6.storedCrossfaderParams.xFaderMode = 1;
     NumarkNS6.storedCrossfaderParams.xFaderCurve = curve;
+    NumarkNS6.crossfaderChanged = true;
+    var scratchContourActive = NumarkNS6.Mixer && NumarkNS6.Mixer.changeCrossfaderContour && NumarkNS6.Mixer.changeCrossfaderContour.state;
+    if (!scratchContourActive) {
+        engine.setValue("[Mixer Profile]", "xFaderMode", 1);
+        engine.setValue("[Mixer Profile]", "xFaderCurve", curve);
+    }
 };
 // The physical crossfader remains its own 14-bit control on CC 7/39.
 NumarkNS6.crossfader = NumarkNS6.filtered14Bit("[Master]", "crossfader", function (value) {
@@ -811,12 +826,12 @@ NumarkNS6.focusLibraryWidget = function(widget) {
 };
 NumarkNS6.navigateLibrary = function(direction) {
     var focusedWidget = engine.getValue("[Library]", "focused_widget");
-    if (focusedWidget === 0) {
-        var key = NumarkNS6.navTarget === 2 ? "SelectPlaylist" : "SelectTrackKnob";
-        engine.setValue("[Playlist]", key, direction);
-    } else {
-        engine.setValue("[Library]", "MoveVertical", direction);
-    }
+    // Prefer the direct selection controls over Library.MoveVertical, which
+    // emulates arrow-key presses and stops working while Mixxx is in background.
+    // Keep the last explicit FILES/CRATES target when the UI has no focused widget.
+    if (focusedWidget === 1 || focusedWidget === 2) NumarkNS6.navTarget = focusedWidget;
+    var key = NumarkNS6.navTarget === 2 ? "SelectPlaylist" : "SelectTrackKnob";
+    engine.setValue("[Playlist]", key, direction);
 };
 NumarkNS6.moveLibraryFocus = function(direction, backwards) {
     if (engine.getValue("[Library]", "focused_widget") === 0) {
@@ -853,6 +868,20 @@ NumarkNS6.syncLayerLEDs = function() {
 };
 
 NumarkNS6.MixerTemplate = function() {
+
+    // Original NS6 MIDI Monitor capture: Note On/Off, channel 1, note 0.
+    // Keep this input-only because the NS6's switch and headphone circuit are
+    // handled by the controller itself.
+    this.splitCueSwitch = new components.Button({
+        midi: [0x90, 0x00], group: "[Master]",
+        outConnect: false,
+        input: function(_ch, _ctrl, value) {
+            // This switch reports its state: Note On enables Split Cue and
+            // Note Off disables it. Mirror the state instead of toggling.
+            engine.setValue("[Master]", "headSplit", value > 0 ? 1 : 0);
+        },
+        shutdown: function() {}
+    });
     
     // 🎧 Botões de Layer (Deck Change) com rastreamento para o BPM Meter
     // LADO DIREITO (Deck 2 / 4)
@@ -1093,17 +1122,34 @@ NumarkNS6.HotcuesContainer.prototype = new components.ComponentContainer();
 // ==========================================================
 
 NumarkNS6.faderStartLeft = false; NumarkNS6.faderStartRight = false; NumarkNS6.prevCrossfader = 0;
-NumarkNS6.toggleFaderStartLeft = function(ch, ctrl, val) { if (val > 0) { NumarkNS6.faderStartLeft = !NumarkNS6.faderStartLeft; midi.sendShortMsg(0x90, 0x02, NumarkNS6.faderStartLeft ? 0x7F : 0x00); } };
-NumarkNS6.toggleFaderStartRight = function(ch, ctrl, val) { if (val > 0) { NumarkNS6.faderStartRight = !NumarkNS6.faderStartRight; midi.sendShortMsg(0x90, 0x03, NumarkNS6.faderStartRight ? 0x7F : 0x00); } };
+NumarkNS6.setFaderStartLeft = function(ch, ctrl, val, status) {
+    NumarkNS6.faderStartLeft = (status & 0xF0) === 0x90 && val > 0;
+    midi.sendShortMsg(0x90, 0x02, NumarkNS6.faderStartLeft ? 0x7F : 0x00);
+};
+NumarkNS6.setFaderStartRight = function(ch, ctrl, val, status) {
+    NumarkNS6.faderStartRight = (status & 0xF0) === 0x90 && val > 0;
+    midi.sendShortMsg(0x90, 0x03, NumarkNS6.faderStartRight ? 0x7F : 0x00);
+};
 
-engine.makeConnection("[Master]", "crossfader", function(value) {
-    if (NumarkNS6.faderStartLeft && value > -0.95 && NumarkNS6.prevCrossfader <= -0.95) for (var i = 1; i <= 4; i++) { if (engine.getValue("[Channel" + i + "]", "orientation") === 0) engine.setValue("[Channel" + i + "]", "play", 1); }
-    else if (NumarkNS6.faderStartLeft && value <= -0.95 && NumarkNS6.prevCrossfader > -0.95) for (var i = 1; i <= 4; i++) { if (engine.getValue("[Channel" + i + "]", "orientation") === 0) engine.setValue("[Channel" + i + "]", "cue_gotoandstop", 1); }
+NumarkNS6.handleFaderStartCrossfader = function(value) {
+    // Start a left-assigned deck as the crossfader leaves the fully-right
+    // (muted) end; stop at cue when it returns to that opposite end.
+    if (NumarkNS6.faderStartLeft && value < 0.95 && NumarkNS6.prevCrossfader >= 0.95) {
+        for (var i = 1; i <= 4; i++) if (engine.getValue("[Channel" + i + "]", "orientation") === 0) engine.setValue("[Channel" + i + "]", "play", 1);
+    } else if (NumarkNS6.faderStartLeft && value >= 0.95 && NumarkNS6.prevCrossfader < 0.95) {
+        for (var i = 1; i <= 4; i++) if (engine.getValue("[Channel" + i + "]", "orientation") === 0) engine.setValue("[Channel" + i + "]", "cue_gotoandstop", 1);
+    }
 
-    if (NumarkNS6.faderStartRight && value < 0.95 && NumarkNS6.prevCrossfader >= 0.95) for (var i = 1; i <= 4; i++) { if (engine.getValue("[Channel" + i + "]", "orientation") === 2) engine.setValue("[Channel" + i + "]", "play", 1); }
-    else if (NumarkNS6.faderStartRight && value >= 0.95 && NumarkNS6.prevCrossfader < 0.95) for (var i = 1; i <= 4; i++) { if (engine.getValue("[Channel" + i + "]", "orientation") === 2) engine.setValue("[Channel" + i + "]", "cue_gotoandstop", 1); }
+    // The right-assigned deck is the mirror image: left end mutes it.
+    if (NumarkNS6.faderStartRight && value > -0.95 && NumarkNS6.prevCrossfader <= -0.95) {
+        for (var j = 1; j <= 4; j++) if (engine.getValue("[Channel" + j + "]", "orientation") === 2) engine.setValue("[Channel" + j + "]", "play", 1);
+    } else if (NumarkNS6.faderStartRight && value <= -0.95 && NumarkNS6.prevCrossfader > -0.95) {
+        for (var k = 1; k <= 4; k++) if (engine.getValue("[Channel" + k + "]", "orientation") === 2) engine.setValue("[Channel" + k + "]", "cue_gotoandstop", 1);
+    }
     NumarkNS6.prevCrossfader = value;
-});
+};
+
+engine.makeConnection("[Master]", "crossfader", NumarkNS6.handleFaderStartCrossfader);
 
 
 // =======================================================
@@ -1347,8 +1393,44 @@ NumarkNS6.Deck = function(channel) {
     this.bpmSlider = new components.Pot({
         midi: [0xB0 + channel, 0x01, 0xB0 + channel, 0x21],
         inKey: "rate", group: theDeck.group, invert: true,
-        inSetParameter: function(value) {
-            components.Pot.prototype.inSetParameter.call(this, value);
+        finePitchMode: false, normalRebaseMode: false, normalRebaseOffset: 0,
+        lastFaderParameter: undefined,
+        finePitchSensitivity: NumarkNS6.finePitchSensitivity,
+        shift: function() {
+            this.finePitchMode = true;
+        },
+        unshift: function() {
+            if (this.finePitchMode) {
+                this.finePitchMode = false;
+                this.normalRebaseMode = true;
+                this.normalRebaseOffset = engine.getParameter(this.group, this.inKey) -
+                    (this.lastFaderParameter === undefined ? 0 : this.lastFaderParameter);
+            }
+        },
+        input: function(ch, ctrl, value, status, group) {
+            // inputMSB/inputLSB deliver the combined 14-bit position here.
+            var rawValue = this.MSB !== undefined ? (this.MSB << 7) + value : value;
+            var faderParameter = this.inValueScale(rawValue);
+            if (this.invert) faderParameter = 1 - faderParameter;
+            var rateBefore = engine.getParameter(this.group, this.inKey);
+
+            if (this.finePitchMode) {
+                if (this.lastFaderParameter !== undefined) {
+                    engine.setParameter(this.group, this.inKey, NumarkNS6.finePitchParameterStep(
+                        rateBefore,
+                        this.lastFaderParameter,
+                        faderParameter,
+                        this.finePitchSensitivity
+                    ));
+                }
+            } else if (this.normalRebaseMode) {
+                var rebasedParameter = Math.max(0, Math.min(1, faderParameter + this.normalRebaseOffset));
+                engine.setParameter(this.group, this.inKey, rebasedParameter);
+            } else {
+                components.Pot.prototype.input.call(this, ch, ctrl, value, status, group);
+            }
+
+            this.lastFaderParameter = faderParameter;
         }
     });
     

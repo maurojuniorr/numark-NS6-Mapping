@@ -2540,8 +2540,17 @@
       <!-- Faders -->
       <control>
           <group>[Master]</group>
-          <key>NumarkNS6.toggleFaderStartLeft</key>
+          <key>NumarkNS6.setFaderStartLeft</key>
           <status>0x90</status>
+          <midino>0x02</midino>
+          <options>
+              <script-binding/>
+          </options>
+      </control>
+      <control>
+          <group>[Master]</group>
+          <key>NumarkNS6.setFaderStartLeft</key>
+          <status>0x80</status>
           <midino>0x02</midino>
           <options>
               <script-binding/>
@@ -2550,8 +2559,17 @@
 
       <control>
           <group>[Master]</group>
-          <key>NumarkNS6.toggleFaderStartRight</key>
+          <key>NumarkNS6.setFaderStartRight</key>
           <status>0x90</status>
+          <midino>0x03</midino>
+          <options>
+              <script-binding/>
+          </options>
+      </control>
+      <control>
+          <group>[Master]</group>
+          <key>NumarkNS6.setFaderStartRight</key>
+          <status>0x80</status>
           <midino>0x03</midino>
           <options>
               <script-binding/>
@@ -2608,6 +2626,22 @@
         <midino>0x32</midino>
         <options><fourteen-bit-lsb/></options>
         <description>NS6 headphone CUE/MIX knob: CC 50 LSB</description>
+      </control>
+      <control>
+        <group>[Master]</group>
+        <key>NumarkNS6.Mixer.splitCueSwitch.input</key>
+        <status>0x90</status>
+        <midino>0x00</midino>
+        <options><script-binding/></options>
+        <description>NS6 Split Cue switch on: Note On, channel 1, note 0</description>
+      </control>
+      <control>
+        <group>[Master]</group>
+        <key>NumarkNS6.Mixer.splitCueSwitch.input</key>
+        <status>0x80</status>
+        <midino>0x00</midino>
+        <options><script-binding/></options>
+        <description>NS6 Split Cue switch off: Note Off, channel 1, note 0</description>
       </control>
       <!--mixer knobs-->
       <control>
