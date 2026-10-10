@@ -813,29 +813,30 @@ NumarkNS6.bootAnimation = function () {
 // Variáveis globais para a régua de BPM saber quem está visível
 NumarkNS6.leftDeck = 1;
 NumarkNS6.rightDeck = 2;
-NumarkNS6.navTarget = 1;
+// Keep the last library destination while Mixxx has no focused widget.
+NumarkNS6.navTarget = 3; // FocusWidget::TracksTable
 NumarkNS6.toggleBigLibrary = function() {
     var nextState = engine.getValue("[Skin]", "show_maximized_library") > 0 ? 0 : 1;
     engine.setValue("[Skin]", "show_maximized_library", nextState);
     return nextState;
 };
-// Mixxx 2.4+: focused_widget 1 is Search and 2 is the library tree/sidebar.
+// FocusWidget values: Searchbar=1, Sidebar=2, TracksTable=3.
 NumarkNS6.focusLibraryWidget = function(widget) {
-    if (widget === 1 || widget === 2) NumarkNS6.navTarget = widget;
+    if (widget === 2 || widget === 3) NumarkNS6.navTarget = widget;
     engine.setValue("[Library]", "focused_widget", widget);
 };
 NumarkNS6.navigateLibrary = function(direction) {
     var focusedWidget = engine.getValue("[Library]", "focused_widget");
     // Prefer the direct selection controls over Library.MoveVertical, which
     // emulates arrow-key presses and stops working while Mixxx is in background.
-    // Keep the last explicit FILES/CRATES target when the UI has no focused widget.
-    if (focusedWidget === 1 || focusedWidget === 2) NumarkNS6.navTarget = focusedWidget;
+    // Ignore Searchbar/None/temporary focus so FILES and CRATES stay selected.
+    if (focusedWidget === 2 || focusedWidget === 3) NumarkNS6.navTarget = focusedWidget;
     var key = NumarkNS6.navTarget === 2 ? "SelectPlaylist" : "SelectTrackKnob";
     engine.setValue("[Playlist]", key, direction);
 };
 NumarkNS6.moveLibraryFocus = function(direction, backwards) {
     if (engine.getValue("[Library]", "focused_widget") === 0) {
-        NumarkNS6.navTarget = direction < 0 ? 2 : 1;
+        NumarkNS6.navTarget = direction < 0 ? 2 : 3;
         NumarkNS6.updateNavLEDs();
     } else if (backwards) {
         engine.setValue("[Library]", "MoveFocusBackward", 1);
@@ -845,13 +846,15 @@ NumarkNS6.moveLibraryFocus = function(direction, backwards) {
 };
 NumarkNS6.updateNavLEDs = function() {
     var focusedWidget = engine.getValue("[Library]", "focused_widget");
-    if (focusedWidget === 1 || focusedWidget === 2) NumarkNS6.navTarget = focusedWidget;
-    if (focusedWidget === 0) focusedWidget = NumarkNS6.navTarget;
+    // Only actual library destinations update the remembered selection.
+    // Focus loss (None=0), Searchbar (1), or a dialog must not switch LEDs.
+    if (focusedWidget === 2 || focusedWidget === 3) NumarkNS6.navTarget = focusedWidget;
+    var selectedWidget = NumarkNS6.navTarget;
     var isBigLibrary = engine.getValue("[Skin]", "show_maximized_library") > 0;
     NumarkNS6.sendLed(0xB0, 0x01, 0x7F); // VIEW
-    NumarkNS6.sendLed(0xB0, 0x03, focusedWidget === 2 ? 0x7F : 0x00); // CRATES: tree/sidebar
+    NumarkNS6.sendLed(0xB0, 0x03, selectedWidget === 2 ? 0x7F : 0x00); // CRATES: tree/sidebar
     NumarkNS6.sendLed(0xB0, 0x04, isBigLibrary ? 0x7F : 0x00); // PREPARE: Big Library state
-    NumarkNS6.sendLed(0xB0, 0x05, focusedWidget === 1 ? 0x7F : 0x00); // FILES: search
+    NumarkNS6.sendLed(0xB0, 0x05, selectedWidget === 3 ? 0x7F : 0x00); // FILES: track list
 };
 NumarkNS6.toggleDeckLayout = function() {
     var nextState = engine.getValue("[Skin]", "show_4decks") > 0 ? 0 : 1;
@@ -955,12 +958,12 @@ this.deckChangeL = new components.Button({
         }
     });
 
-    // 3. Botão FILES (0x0A) - Abre a Big Library (Sem Pastas)
+    // 3. Botão FILES (0x0A) - Foca a lista de músicas
     this.filesButton = new components.Button({
         midi: [0x90, 0x0A],
         input: function (ch, ctrl, val) {
             if (val > 0) {
-                NumarkNS6.focusLibraryWidget(1);
+                NumarkNS6.focusLibraryWidget(3);
             }
         }
     });
