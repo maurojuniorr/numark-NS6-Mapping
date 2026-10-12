@@ -664,6 +664,8 @@ components.Component.prototype.send = function (value) {
 NumarkNS6.storedCrossfaderParams = {};
 NumarkNS6.crossfaderCallbackConnections = [];
 NumarkNS6.CrossfaderChangeCallback = function (value, group, control) { NumarkNS6.crossfaderChanged = true; NumarkNS6.storedCrossfaderParams[control] = value; };
+NumarkNS6.SysExInit1 = [0xF0, 0x00, 0x01, 0x3F, 0x7F, 0x79, 0x50, 0x00, 0x10, 0x04, 0x01, 0x00, 0x00, 0x00, 0x04, 0x04, 0x0E, 0x0F, 0x00, 0x00, 0x0E, 0x05, 0x0F, 0x04, 0x0C, 0x06, 0x0B, 0x0F, 0x0D, 0x0C, 0xF7];
+NumarkNS6.SysExInit2 = [0xF0, 0x00, 0x01, 0x3F, 0x7F, 0x79, 0x60, 0x00, 0x01, 0x49, 0x01, 0x00, 0x00, 0x00, 0x00, 0xF7];
 
 
 // =======================================================
@@ -672,6 +674,12 @@ NumarkNS6.CrossfaderChangeCallback = function (value, group, control) { NumarkNS
 
 NumarkNS6.init = function () {
     NumarkNS6.isBooting = true; // Escudo Levantado!
+
+    // Ask the NS6 to resend its current physical control state when the Mixxx
+    // mapping starts. The system driver separately performs the USB-session
+    // handshake; this mapping query refreshes the state visible to Mixxx.
+    midi.sendSysexMsg(NumarkNS6.SysExInit1, NumarkNS6.SysExInit1.length);
+    midi.sendSysexMsg(NumarkNS6.SysExInit2, NumarkNS6.SysExInit2.length);
 
     // Tiro de misericórdia garantido nos Layers
     midi.sendShortMsg(0x80, 0x31, 0x00); 
