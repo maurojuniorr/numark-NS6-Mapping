@@ -184,9 +184,17 @@ NumarkNS6.hotcuePageIndexBehavior = true;
 // A NS6 envia posição em 14 bits, mas o Mixxx fica natural para scratch
 // com uma relação virtual de 2.048 ticks por volta física.
 NumarkNS6.scratchSettings = { "alpha": 1.0/8, "beta": (1.0/8)/32, "jogResolution": 2048, "vinylSpeed": 33.33 };
-// Em 5 ms, 768 passos equivalem a mais de 560 RPM. Acima disso é ruído USB,
-// não um movimento humano do prato.
-NumarkNS6.maxJogDelta = 768;
+// Mixxx Preferences > Controllers > Numark NS6 > Scratch Sensitivity.
+// The default 50% matches the current djay-equivalent jog response.
+var configuredScratchSensitivity = (typeof engine.getSetting === "function")
+    ? Number(engine.getSetting("scratchSensitivity")) : 50;
+NumarkNS6.scratchSensitivity = isFinite(configuredScratchSensitivity)
+    ? Math.max(25, Math.min(100, configuredScratchSensitivity)) : 50;
+// Scale touched scratch and stopped-deck scrub. Movement received after
+// touch-off is discarded until the platter has been quiet for 60 ms.
+NumarkNS6.scratchDeltaForDjaySensitivity = function (delta) {
+    return delta * (NumarkNS6.scratchSensitivity / 100);
+};
 NumarkNS6.pitchBendSensitivity = 5; // Quanto menor, mais rápido ele empurra a batida
 NumarkNS6.repairPlayRelease = function (deck, group, ctrl, value) {
     if (!deck.playPressed) return;
@@ -225,23 +233,16 @@ NumarkNS6.acceptPlayPress = function (deck, now) {
     deck.lastPlayPressAt = now;
     return true;
 };
-// A NS6 ainda entrega valores de posição depois do note-off do toque. O
-// handoff só ocorre depois deste período sem nenhuma posição válida.
+// Ignore jog positions that continue arriving after touch-off until the platter
+// has been quiet for this long. Scratch itself is handed back immediately.
 NumarkNS6.scratchReleaseDelayMs = 60;
 NumarkNS6.scratchPlaybackRecoveryMs = 100;
-// Only a deliberate fast reverse throw keeps following platter motion after
-// touch-off. Ordinary scratch releases return to playback immediately.
-NumarkNS6.backspinReleaseRateThreshold = -2.0;
-// Rate alone confuses a deliberate backward scratch with a thrown backspin.
-// Require a sharp recent acceleration into reverse as well (Mixxx speed units/s).
-NumarkNS6.backspinAccelerationThreshold = -8.0;
+// Release fast platter throws into Mixxx's native inertia controller.
+NumarkNS6.backspinReleaseRateThreshold = -2.5;
+NumarkNS6.backspinHandoffQuietMs = 5;
+// Mixxx's native scratch inertia starts at this platter speed after a throw.
+NumarkNS6.frontspinReleaseRateThreshold = 2.5;
 NumarkNS6.backspinAccelerationWindowMs = 120;
-// A fast release is only a backspin candidate. Require meaningful platter
-// travel after touch-off before waiting for the full inertial tail; brief
-// reverse flicks hand playback back as soon as their short quiet window ends.
-NumarkNS6.backspinCandidateQuietMs = 35;
-NumarkNS6.backspinMinCoastMs = 100;
-NumarkNS6.backspinMinCoastDelta = 32;
 NumarkNS6.recordJogRate = function (deck, rate, now) {
     if (!deck.jogRateSamples) deck.jogRateSamples = [];
     deck.jogRateSamples.push({ rate: rate, time: now });
@@ -255,6 +256,34 @@ NumarkNS6.getJogAcceleration = function (deck) {
     var elapsed = last.time - first.time;
     if (elapsed <= 0 || elapsed > NumarkNS6.backspinAccelerationWindowMs) return null;
     return (last.rate - first.rate) * 1000 / elapsed;
+};
+NumarkNS6.scheduleJogTailClear = function (deck) {
+    if (deck.scratchReleaseTimer !== undefined && deck.scratchReleaseTimer !== 0) {
+        engine.stopTimer(deck.scratchReleaseTimer);
+    }
+    deck.scratchReleaseTimer = engine.beginTimer(NumarkNS6.scratchReleaseDelayMs, function () {
+        deck.scratchReleaseTimer = 0;
+        deck.ignoreJogTail = false;
+    }, true);
+};
+NumarkNS6.scheduleScratchHandoff = function (deckNum, deck, grp) {
+    if (deck.scratchReleaseTimer !== undefined && deck.scratchReleaseTimer !== 0) {
+        engine.stopTimer(deck.scratchReleaseTimer);
+    }
+    deck.scratchReleaseTimer = engine.beginTimer(NumarkNS6.backspinHandoffQuietMs, function () {
+        deck.scratchReleaseTimer = 0;
+        if (deck.jogTouched || !deck.scratchReleasePending) return;
+        deck.scratchReleasePending = false;
+        // The platter tail has finished. Mixxx ramps to playback speed if the
+        // deck was playing, or to zero if it was paused; neither path toggles Play.
+        NumarkNS6.releaseScratchToPlayback(deckNum, deck, grp, true);
+        deck.scratchReleaseDirection = 0;
+        deck.wasPlayingBeforeScratch = false;
+        deck.ignoreJogTail = true;
+        NumarkNS6.scheduleJogTailClear(deck);
+        print("NS6 scratch handoff complete deck=" + deckNum +
+            " rate=" + engine.getValue(grp, "scratch2"));
+    }, true);
 };
 
 // Volume faders use full 14-bit values. Permit real large moves, especially
@@ -395,11 +424,16 @@ NumarkNS6.filteredPot14Bit = function (options) {
 // neutral mixing curve, then move progressively toward a sharp cut on the right.
 NumarkNS6.xFaderCurveForMidiValue = function (value) {
     var normalized = Math.max(0, Math.min(127, value)) / 127.0;
-    var midpoint = 0.5;
-    if (normalized <= midpoint) {
-        return 0.6 * Math.pow(1.0 / 0.6, normalized / midpoint);
+    if (normalized <= 0.5) {
+        return 0.6 + 0.07 * (normalized / 0.5);
     }
-    return Math.pow(1000.0, (normalized - midpoint) / (1.0 - midpoint));
+    if (normalized <= 0.85) {
+        return 0.67 * Math.pow(4.0 / 0.67, (normalized - 0.5) / 0.35);
+    }
+    if (normalized <= 0.97) {
+        return 4.0 * Math.pow(5.0, (normalized - 0.85) / 0.12);
+    }
+    return 20.0 * Math.pow(50.0, (normalized - 0.97) / 0.03);
 };
 NumarkNS6.setXfaderCurve = function (channel, control, value) {
     var curve = NumarkNS6.xFaderCurveForMidiValue(value);
@@ -1532,13 +1566,6 @@ NumarkNS6.jogMove14bit = function(ch, ctrl, val, st, grp) {
         diag.pendingRawTrace = diag.rawEventHistory.slice();
         diag.pendingRawTraceEvents = NumarkNS6.jogTraceFutureEvents;
     }
-    // Reject an impossible jump, but rebase to that sample. Keeping the old position here can make every
-    // later delta look impossible until the platter eventually catches up.
-    if (Math.abs(delta) > NumarkNS6.maxJogDelta) {
-        if (diag && deck && deck.jogTouched) diag.rejectedSamples++;
-        NumarkNS6.lastJogValue[deckNum] = fullValue;
-        return;
-    }
     NumarkNS6.lastJogValue[deckNum] = fullValue;
     if (diag && deck && deck.jogTouched) {
         diag.processedSamples++;
@@ -1565,34 +1592,13 @@ NumarkNS6.jogMove14bit = function(ch, ctrl, val, st, grp) {
         NumarkNS6.recordJogRate(deck, engine.getValue(grp, "scratch2"), Date.now());
     }
 
-    // Continue following the platter's real inertia after touch release.
-    // Hand off only after the encoder has been quiet for the release interval.
+    // Continue following the real encoder tail in the throw direction after
+    // touch-off. Hand control back after the platter is quiet.
     if (!deck.jogTouched && deck.scratchReleasePending) {
-        if (deck.backspinCandidate && delta < 0) {
-            // Confirm only real reverse coast after touch-off. Absolute deltas
-            // also counted forward motion and could misclassify an ordinary
-            // backward scratch release as a backspin.
-            var now = Date.now();
-            if (!deck.backspinTailStartedAt) deck.backspinTailStartedAt = now;
-            deck.backspinTailDelta += -delta;
-            if (now - deck.backspinTailStartedAt >= NumarkNS6.backspinMinCoastMs &&
-                    deck.backspinTailDelta >= NumarkNS6.backspinMinCoastDelta) {
-                deck.backspinCandidate = false;
-                deck.backspinConfirmed = true;
-                print("NS6 backspin confirmed deck=" + deckNum + " tailMs=" +
-                    (now - deck.backspinTailStartedAt) + " reverseTailDelta=" + deck.backspinTailDelta);
-            }
-        } else if (deck.backspinCandidate && delta > 0) {
-            // A forward tail is evidence against a reverse throw. Return to
-            // the ordinary, short handoff path instead of extending scratch.
-            deck.backspinCandidate = false;
-            deck.backspinTailStartedAt = 0;
-            deck.backspinTailDelta = 0;
-            print("NS6 backspin candidate canceled by forward tail deck=" + deckNum);
-        }
-        if (engine.isScratching(deckNum) && !deck.isAutoScrubbing) {
-            engine.scratchTick(deckNum, delta);
-            if (diag && delta !== 0) {
+        if (delta * deck.scratchReleaseDirection > 0 &&
+                engine.isScratching(deckNum) && !deck.isAutoScrubbing) {
+            engine.scratchTick(deckNum, NumarkNS6.scratchDeltaForDjaySensitivity(delta));
+            if (diag) {
                 diag.scratchTickCalls++;
                 diag.scratchTickAbsSum += Math.abs(delta);
             }
@@ -1601,9 +1607,12 @@ NumarkNS6.jogMove14bit = function(ch, ctrl, val, st, grp) {
         return;
     }
 
-    // Discard late packets after the completed handoff instead of turning
-    // them into an unintended nudge.
-    if (!deck.jogTouched && deck.ignoreJogTail) return;
+    // Drop platter coast after touch-off instead of feeding it into scratch or
+    // nudge. Restart the quiet window only for actual movement samples.
+    if (!deck.jogTouched && deck.ignoreJogTail) {
+        if (delta !== 0) NumarkNS6.scheduleJogTailClear(deck);
+        return;
+    }
     
     // 1. MODO SKIP (Beatjump via Prato - Protegido!)
     if (deck.skipMode) {
@@ -1655,7 +1664,7 @@ NumarkNS6.jogMove14bit = function(ch, ctrl, val, st, grp) {
     // Se o Sensor de Toque (jogTouch14bit) ligou o motor...
     if (engine.isScratching(deckNum) && !deck.isAutoScrubbing) {
         // ...Nós arrastamos a música! (Modo Scratch)
-        engine.scratchTick(deckNum, delta);
+        engine.scratchTick(deckNum, NumarkNS6.scratchDeltaForDjaySensitivity(delta));
         if (diag && deck.jogTouched && delta !== 0) {
             diag.scratchTickCalls++;
             diag.scratchTickAbsSum += Math.abs(delta);
@@ -1672,7 +1681,7 @@ NumarkNS6.jogMove14bit = function(ch, ctrl, val, st, grp) {
                 engine.scratchEnable(deckNum, heavyResolution, 33.33, NumarkNS6.scratchSettings.alpha, NumarkNS6.scratchSettings.beta);
                 deck.isAutoScrubbing = true;
             }
-            engine.scratchTick(deckNum, delta);
+            engine.scratchTick(deckNum, NumarkNS6.scratchDeltaForDjaySensitivity(delta));
             
             // O timer que limpa o áudio quando você para de girar
             if (deck.scrubTimer !== undefined && deck.scrubTimer !== 0) engine.stopTimer(deck.scrubTimer);
@@ -1699,55 +1708,6 @@ NumarkNS6.scratchButtonInput = function (ch, ctrl, val, st, grp) {
     midi.sendShortMsg(0xB0 + deck.midiChannel, 0x12, deck.scratchMode ? 0x7F : 0x00); 
 };
 
-NumarkNS6.scheduleScratchHandoff = function (deckNum, deck, grp) {
-    if (deck.scratchReleaseTimer !== undefined && deck.scratchReleaseTimer !== 0) {
-        engine.stopTimer(deck.scratchReleaseTimer);
-    }
-    if (!deck.scratchReleasePending) return;
-    var resumePlayback = (typeof deck.transportWantsPlay === "boolean")
-        ? deck.transportWantsPlay : (deck.scratchResumeIntent || deck.wasPlayingBeforeScratch);
-    var quietDelay = deck.backspinCandidate
-        ? NumarkNS6.backspinCandidateQuietMs : NumarkNS6.scratchReleaseDelayMs;
-    deck.scratchReleaseTimer = engine.beginTimer(quietDelay, function () {
-        deck.scratchReleaseTimer = 0;
-        if (deck.jogTouched) return;
-        if (deck.backspinCandidate && !deck.backspinConfirmed) {
-            deck.scratchReleasePending = false;
-            deck.backspinCandidate = false;
-            deck.backspinConfirmed = false;
-            deck.wasPlayingBeforeScratch = false;
-            deck.ignoreJogTail = true;
-            print("NS6 short reverse release; returning to playback deck=" + deckNum +
-                " tailMs=" + (deck.backspinTailStartedAt ? Date.now() - deck.backspinTailStartedAt : 0) +
-                " tailDelta=" + (deck.backspinTailDelta || 0));
-            NumarkNS6.releaseScratchToPlayback(deckNum, deck, grp);
-            deck.scratchReleaseTimer = engine.beginTimer(NumarkNS6.scratchReleaseDelayMs, function () {
-                deck.scratchReleaseTimer = 0;
-                deck.ignoreJogTail = false;
-            }, true);
-            NumarkNS6.scheduleScratchPlaybackRecovery(deckNum, deck, grp, resumePlayback);
-            return;
-        }
-        deck.scratchReleasePending = false;
-        deck.backspinConfirmed = false;
-        deck.ignoreJogTail = false;
-        print("NS6 handoff complete deck=" + deckNum + " play=" + engine.getValue(grp, "play") + " scratch=" + engine.isScratching(deckNum) + " rate=" + engine.getValue(grp, "scratch2"));
-        // Let the real platter movement supply the whole backspin, then snap
-        // back to normal playback once it has stopped sending position data.
-        NumarkNS6.releaseScratchToPlayback(deckNum, deck, grp);
-        deck.wasPlayingBeforeScratch = false;
-        deck.ignoreJogTail = true;
-        deck.scratchReleaseTimer = engine.beginTimer(NumarkNS6.scratchReleaseDelayMs, function () {
-            deck.scratchReleaseTimer = 0;
-            deck.ignoreJogTail = false;
-        }, true);
-        // Scratch never sends a Play/Pause command. Let scratchDisable return
-        // playback ownership directly to Mixxx; manufacturing a Play press
-        // here can restart/drag the track after an otherwise normal scratch.
-        NumarkNS6.scheduleScratchPlaybackRecovery(deckNum, deck, grp, resumePlayback);
-    }, true);
-};
-
 // Recover only if Mixxx dropped its Play control during a scratch handoff.
 // This never toggles a deck that was paused before the jog was touched.
 NumarkNS6.scheduleScratchPlaybackRecovery = function (deckNum, deck, grp, resumePlayback) {
@@ -1768,17 +1728,15 @@ NumarkNS6.scheduleScratchPlaybackRecovery = function (deckNum, deck, grp, resume
 };
 
 // End scratch toward normal playback when Play is intended to stay on.
-// The final handoff must jump to the current deck rate: ramp=true can leave a
-// short reverse scratch/backspin crawling near zero, which feels like touch
-// stayed engaged even though the release edge was received.
-NumarkNS6.releaseScratchToPlayback = function (deckNum, deck, grp) {
+// A non-ramped handoff avoids a slow crawl after the touch sensor is released.
+NumarkNS6.releaseScratchToPlayback = function (deckNum, deck, grp, ramp) {
     // O estado capturado no início do toque é autoritativo. O valor atual do
     // controle pode refletir uma transição interna do scratch, não intenção
     // de iniciar uma faixa que estava pausada.
     var resume = (typeof deck.transportWantsPlay === "boolean")
         ? deck.transportWantsPlay
         : ((deck.scratchResumeIntent || deck.wasPlayingBeforeScratch) || engine.getValue(grp, "play") > 0);
-    engine.scratchDisable(deckNum, false);
+    engine.scratchDisable(deckNum, ramp === true);
     return resume;
 };
 
@@ -1787,24 +1745,16 @@ NumarkNS6.forceJogRelease = function (deckNum, deck, grp, reason) {
         if (deck[timerName] !== undefined && deck[timerName] !== 0) engine.stopTimer(deck[timerName]);
         deck[timerName] = 0;
     });
-    if (deck.jogTouched || deck.scratchReleasePending || deck.isAutoScrubbing || engine.isScratching(deckNum)) {
+    if (deck.jogTouched || deck.isAutoScrubbing || engine.isScratching(deckNum)) {
         print("NS6 scratch resync deck=" + deckNum + " reason=" + reason);
         NumarkNS6.releaseScratchToPlayback(deckNum, deck, grp);
     }
     deck.jogTouched = false;
-    deck.scratchReleasePending = false;
     deck.wasPlayingBeforeScratch = false;
     deck.scratchResumeIntent = false;
-    deck.backspinCandidate = false;
-    deck.backspinConfirmed = false;
-    deck.backspinTailStartedAt = 0;
-    deck.backspinTailDelta = 0;
     deck.isAutoScrubbing = false;
     deck.ignoreJogTail = true;
-    deck.scratchReleaseTimer = engine.beginTimer(NumarkNS6.scratchReleaseDelayMs, function () {
-        deck.scratchReleaseTimer = 0;
-        deck.ignoreJogTail = false;
-    }, true);
+    NumarkNS6.scheduleJogTailClear(deck);
 };
 
 NumarkNS6.jogTouch14bit = function (ch, ctrl, val, st, grp) {
@@ -1837,26 +1787,23 @@ NumarkNS6.jogTouch14bit = function (ch, ctrl, val, st, grp) {
             engine.stopTimer(deck.playbackGuardTimer);
             deck.playbackGuardTimer = 0;
         }
+        deck.scratchReleasePending = false;
         deck.jogTouched = true;
+        deck.jogRateSamples = [];
+        NumarkNS6.recordJogRate(deck, engine.getValue(grp, "scratch2"), Date.now());
         NumarkNS6.jogMidiDiag[deckNum] = {
             deckNum: deckNum, startedAt: Date.now(), msbPackets: 0, lsbPackets: 0,
-            processedSamples: 0, movingSamples: 0, zeroSamples: 0, rejectedSamples: 0,
+            processedSamples: 0, movingSamples: 0, zeroSamples: 0,
             maxAbsDelta: 0, minDelta: 0, maxDelta: 0,
             scratchTickCalls: 0, scratchTickAbsSum: 0,
             forwardSamples: 0, backwardSamples: 0, forwardDelta: 0, backwardDelta: 0,
             maxInterPacketMs: 0, lastPacketAt: 0,
             rawEventHistory: [], pendingRawTrace: null, pendingRawTraceEvents: 0
         };
-        deck.backspinCandidate = false;
-        deck.backspinConfirmed = false;
-        deck.backspinTailStartedAt = 0;
-        deck.backspinTailDelta = 0;
-        deck.scratchReleasePending = false;
         deck.wasPlayingBeforeScratch = preserveResumeIntent;
+        deck.scratchReleaseDirection = 0;
         deck.scratchResumeIntent = preserveResumeIntent;
         deck.transportWantsPlay = preserveResumeIntent;
-        deck.jogRateSamples = [];
-        NumarkNS6.recordJogRate(deck, engine.getValue(grp, "scratch2"), Date.now());
         deck.ignoreJogTail = false;
         print("NS6 handoff touch deck=" + deckNum + " play=" + (deck.wasPlayingBeforeScratch ? 1 : 0));
         engine.scratchEnable(deckNum, NumarkNS6.scratchSettings.jogResolution, 33.33, NumarkNS6.scratchSettings.alpha, NumarkNS6.scratchSettings.beta);
@@ -1879,45 +1826,65 @@ NumarkNS6.jogTouch14bit = function (ch, ctrl, val, st, grp) {
                 " scratchTicks=" + jogDiag.scratchTickCalls + " tickAbsSum=" + jogDiag.scratchTickAbsSum +
                 " forward=" + jogDiag.forwardSamples + "/" + jogDiag.forwardDelta +
                 " backward=" + jogDiag.backwardSamples + "/" + jogDiag.backwardDelta +
-                " rejected=" + jogDiag.rejectedSamples + " maxGapMs=" + jogDiag.maxInterPacketMs);
+                " maxGapMs=" + jogDiag.maxInterPacketMs);
             NumarkNS6.jogMidiDiag[deckNum] = null;
         }
         deck.jogTouched = false;
         var releaseRate = engine.getValue(grp, "scratch2");
         NumarkNS6.recordJogRate(deck, releaseRate, Date.now());
         var releaseAcceleration = NumarkNS6.getJogAcceleration(deck);
-        print("NS6 handoff release deck=" + deckNum + " play=" + engine.getValue(grp, "play") + " scratch=" + engine.isScratching(deckNum) + " rate=" + releaseRate + " accel=" + releaseAcceleration);
-        // Backspin is only a backward throw. The acceleration test by itself
-        // can also match a forward movement that is slowing down, so require
-        // an explicitly negative platter rate before considering the throw.
-        if (deck.wasPlayingBeforeScratch && releaseRate < 0 && releaseRate <= NumarkNS6.backspinReleaseRateThreshold && releaseAcceleration !== null && releaseAcceleration <= NumarkNS6.backspinAccelerationThreshold) {
-            // Treat this as a candidate until enough real platter movement
-            // arrives after touch-off; a brief flick must not wait for a long
-            // backspin handoff.
+        print("NS6 handoff release deck=" + deckNum + " play=" + engine.getValue(grp, "play") +
+            " rate=" + releaseRate + " accel=" + releaseAcceleration);
+        // Direction and release speed decide a backspin. Requiring negative
+        // acceleration here drops valid throws that have already begun to
+        // coast by the time the touch-off event arrives.
+        var reverseThrow = releaseRate < NumarkNS6.backspinReleaseRateThreshold;
+        if (reverseThrow) {
             deck.scratchReleasePending = true;
-            deck.backspinCandidate = true;
-            deck.backspinConfirmed = false;
-            deck.backspinTailStartedAt = 0;
-            deck.backspinTailDelta = 0;
+            deck.scratchReleaseDirection = -1;
             deck.ignoreJogTail = false;
             NumarkNS6.scheduleScratchHandoff(deckNum, deck, grp);
-        } else {
-            // Normal scratch release must not simulate another Play press or
-            // wait for platter coasting; just hand playback back to Mixxx.
-            var resumePlayback = (typeof deck.transportWantsPlay === "boolean")
+            return;
+        }
+
+        // A paused deck cannot use Mixxx's playback inertia as the target. Keep
+        // following a fast forward throw, then ramp the scratch rate back to
+        // zero so the stopped track remains stopped.
+        var pausedForwardThrow = !deck.wasPlayingBeforeScratch &&
+                releaseRate > NumarkNS6.frontspinReleaseRateThreshold;
+        if (pausedForwardThrow) {
+            deck.scratchReleasePending = true;
+            deck.scratchReleaseDirection = 1;
+            deck.ignoreJogTail = false;
+            NumarkNS6.scheduleScratchHandoff(deckNum, deck, grp);
+            return;
+        }
+
+        // A fast forward throw should keep moving under Mixxx's native inertia:
+        // it decelerates smoothly to playback tempo instead of stopping at the
+        // end of our MIDI coast tracking and jumping back to normal speed.
+        var forwardThrow = deck.wasPlayingBeforeScratch && releaseRate > 0 &&
+                releaseRate > NumarkNS6.frontspinReleaseRateThreshold &&
+                releaseAcceleration !== null && releaseAcceleration > 0;
+        if (forwardThrow) {
+            var forwardResumePlayback = (typeof deck.transportWantsPlay === "boolean")
                 ? deck.transportWantsPlay : (deck.scratchResumeIntent || deck.wasPlayingBeforeScratch);
-            deck.scratchReleasePending = false;
-            deck.backspinCandidate = false;
-            deck.backspinConfirmed = false;
-            NumarkNS6.releaseScratchToPlayback(deckNum, deck, grp);
+            NumarkNS6.releaseScratchToPlayback(deckNum, deck, grp, true);
             deck.wasPlayingBeforeScratch = false;
             deck.ignoreJogTail = true;
-            deck.scratchReleaseTimer = engine.beginTimer(NumarkNS6.scratchReleaseDelayMs, function () {
-                deck.scratchReleaseTimer = 0;
-                deck.ignoreJogTail = false;
-            }, true);
-            NumarkNS6.scheduleScratchPlaybackRecovery(deckNum, deck, grp, resumePlayback);
+            NumarkNS6.scheduleJogTailClear(deck);
+            NumarkNS6.scheduleScratchPlaybackRecovery(deckNum, deck, grp, forwardResumePlayback);
+            return;
         }
+
+        // Ordinary scratch releases hand playback directly back to Mixxx.
+        var resumePlayback = (typeof deck.transportWantsPlay === "boolean")
+            ? deck.transportWantsPlay : (deck.scratchResumeIntent || deck.wasPlayingBeforeScratch);
+        NumarkNS6.releaseScratchToPlayback(deckNum, deck, grp);
+        deck.wasPlayingBeforeScratch = false;
+        deck.ignoreJogTail = true;
+        NumarkNS6.scheduleJogTailClear(deck);
+        NumarkNS6.scheduleScratchPlaybackRecovery(deckNum, deck, grp, resumePlayback);
     }
 };
 
@@ -2126,7 +2093,6 @@ NumarkNS6.shutdown = function () {
             engine.stopTimer(deck.playbackGuardTimer);
             deck.playbackGuardTimer = 0;
         }
-        deck.scratchReleasePending = false;
         deck.isAutoScrubbing = false;
         engine.scratchDisable(deckNum);
     }

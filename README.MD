@@ -2,7 +2,7 @@
 
 Um mapeamento completo da Numark NS6 original de quatro canais para o Mixxx, desenvolvido e ajustado com a controladora física. O objetivo é fazer os controles responderem de forma natural e precisa, aproveitando a superfície da NS6 para mixar, navegar pela biblioteca e tocar com os quatro decks.
 
-Os jogs foram refinados por meio de testes de scratch e movimentos reais no hardware. A leitura de alta resolução deixa a resposta ágil e controlável; a soltura normal volta à música sem deixar a inércia do prato alterar a reprodução, enquanto um giro rápido para trás pode continuar como backspin. A resposta foi ajustada para se aproximar da sensação do mapeamento nativo da controladora.
+Os jogs foram refinados por meio de testes de scratch e movimentos reais no hardware. A sensibilidade do scratch pode ser ajustada nas opções do controlador no Mixxx. Durante o toque, o movimento do jog é enviado diretamente ao scratch e escalado pela sensibilidade configurada. Arremessos rápidos preservam o impulso do prato: com a faixa tocando, o backspin e o frontspin retornam à velocidade de reprodução; com a faixa pausada, o movimento para frente ou para trás continua até o prato parar, sem iniciar a música. Scratches comuns devolvem o controle imediatamente ao Mixxx.
 
 O projeto também reúne controles de transporte, mixer, fones, efeitos, biblioteca e LEDs. Correções feitas durante os testes resolveram comportamentos imprevisíveis de Play/Cue, soltura dos jogs, extremos dos faders e sincronização dos LEDs. O mapeamento é independente dos drivers de áudio para macOS e Linux.
 
@@ -24,7 +24,9 @@ Desenvolvido e testado com uma Numark NS6 original e Mixxx. Algumas funções de
 ### Jog wheels e pitch
 
 - Jogs responsivos nos quatro decks, com leitura de posição em 14 bits, scratch, pitch bend e busca de faixa com a música pausada.
-- A soltura normal do scratch retorna à reprodução sem arrasto da inércia do jog. Um giro rápido para trás pode continuar como backspin.
+- A sensibilidade do scratch é ajustável nas opções do controlador (25% a 100%, padrão 50%).
+- Backspin e frontspin preservam o impulso do prato. Com a faixa tocando, o jog retorna à velocidade de reprodução; com a faixa pausada, arremessos rápidos para frente e para trás continuam até parar em zero, sem iniciar a música.
+- Movimentos curtos e scratches comuns devolvem o controle ao Mixxx sem atraso; a faixa pausada continua parada.
 - O comportamento de scratch e soltura foi ajustado para uma resposta natural, próxima à sensação do mapeamento nativo da NS6.
 - Play, Cue e hotcues foram ajustados para responder de forma consistente durante o uso.
 - O tempo de início do Play pode ser configurado nas opções do controlador no Mixxx. Zero mantém o início instantâneo.
@@ -70,8 +72,8 @@ Os controles de deck abaixo se repetem nos quatro decks. Os botões **SHIFT** e 
 | **PITCH BEND − / +** | Faz pitch bend temporário para baixo/cima; com SHIFT usa os passos menores. |
 | **PITCH RANGE** | Percorre os ranges ±8%, ±16% e ±50%. |
 | **Pitch fader** | Controla a taxa de reprodução (`rate`) com leitura MIDI de 14 bits. Com SHIFT ativo, o mesmo curso ajusta o pitch em passos finos a partir do valor atual, sem salto ao voltar ao modo normal. O LED central indica pitch em zero; as setas orientam o ajuste de BPM entre os decks ativos. |
-| **JOG — borda** | Responde ao giro para pitch bend ou scratch, conforme o modo. Movimentos rápidos para trás podem continuar como backspin. |
-| **JOG — toque no topo** | Inicia o scratch enquanto tocado. Ao soltar, a reprodução volta sem ser arrastada pela inércia do jog. |
+| **JOG — borda** | Responde ao giro para pitch bend ou busca na faixa, conforme o estado do deck. Saltos de posição válidos em 14 bits são processados sem um limite de delta fixo. |
+| **JOG — toque no topo** | Inicia o scratch enquanto tocado. Arremessos rápidos para frente ou para trás continuam seguindo o prato após soltá-lo. Com a faixa tocando, retornam à velocidade de reprodução; pausada, desaceleram até zero sem dar Play. |
 | **SCRATCH** | Alterna o modo scratch do jog. |
 | **STRIP SEARCH** | Salta para a posição indicada pela touch strip. |
 | **REVERSE** | Alterna reverse; **SHIFT + segurar** ativa Reverse Roll enquanto pressionado. |
@@ -106,7 +108,7 @@ Os controles de deck abaixo se repetem nos quatro decks. Os botões **SHIFT** e 
 | **EQ HIGH / MID / LOW** | Controla as três bandas de equalização do canal. |
 | **Channel input 1–4** | Alterna mute do canal correspondente no Mixxx. |
 | **Crossfader físico** | Controla a posição do crossfader do Mixxx em 14 bits. |
-| **X-FADER** | Ajusta continuamente a curva: suave à esquerda, mixagem equilibrada no centro e corte rápido à direita, como no Serato. É separado da posição do crossfader físico. |
+| **X-FADER** | Ajusta continuamente a curva do crossfader: a região central fica mais suave para a mixagem, enquanto cortes mais agressivos ficam concentrados perto do fim do curso à direita. É separado da posição do crossfader físico. |
 | **Botão de contorno do crossfader** | Alterna entre a curva de scratch e o perfil de curva salvo. |
 | **MASTER** | Controla o ganho Master do Mixxx. |
 | **Headphone LEVEL** | Controla o volume de pré-escuta. |
