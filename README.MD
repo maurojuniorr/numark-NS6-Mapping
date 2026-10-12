@@ -4,7 +4,7 @@ Um mapeamento completo da Numark NS6 original de quatro canais para o Mixxx, des
 
 Os jogs foram refinados por meio de testes de scratch e movimentos reais no hardware. A sensibilidade do scratch pode ser ajustada nas opções do controlador no Mixxx. Durante o toque, o movimento do jog é enviado diretamente ao scratch e escalado pela sensibilidade configurada. Arremessos rápidos preservam o impulso do prato: com a faixa tocando, o backspin e o frontspin retornam à velocidade de reprodução; com a faixa pausada, o movimento para frente ou para trás continua até o prato parar, sem iniciar a música. Scratches comuns devolvem o controle imediatamente ao Mixxx.
 
-O projeto também reúne controles de transporte, mixer, fones, efeitos, biblioteca e LEDs. Correções feitas durante os testes resolveram comportamentos imprevisíveis de Play/Cue, soltura dos jogs, extremos dos faders e sincronização dos LEDs. O mapeamento é independente dos drivers de áudio para macOS e Linux.
+O projeto também reúne controles de transporte, mixer, fones, efeitos, biblioteca e LEDs. Correções feitas durante os testes resolveram comportamentos imprevisíveis de Play/Cue, soltura dos jogs, extremos dos faders e sincronização dos LEDs. O mapeamento é independente do driver de áudio para macOS e Linux; a ativação USB/MIDI da controladora fica a cargo do driver do sistema.
 
 Desenvolvido e testado com uma Numark NS6 original e Mixxx. Algumas funções dependem dos recursos oferecidos pelo Mixxx e podem variar conforme a versão. Relatos e contribuições são bem-vindos.
 
