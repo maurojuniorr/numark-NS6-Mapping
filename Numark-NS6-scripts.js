@@ -289,6 +289,81 @@ NumarkNS6.scheduleScratchHandoff = function (deckNum, deck, grp) {
 // Volume faders use full 14-bit values. Permit real large moves, especially
 // the final travel to zero; rejecting a large MSB delta leaves a stale MSB
 // combined with new LSB packets and can make the fader jump back up.
+NumarkNS6.reconnectBurst = (function () {
+    var pendingZeros = {};
+    var zeroControls = {};
+    var lastValues = {};
+    var settleTimer = 0;
+    var burstTimer = 0;
+    var active = false;
+    var hasSeenPosition = false;
+
+    function flushZeros() {
+        settleTimer = 0;
+        var pending = pendingZeros;
+        pendingZeros = {};
+        zeroControls = {};
+        Object.keys(pending).forEach(function (key) {
+            pending[key]();
+            lastValues[key] = 0;
+        });
+    }
+
+    function finishBurst() {
+        burstTimer = 0;
+        active = false;
+    }
+
+    return {
+        handle: function (key, value, apply) {
+            if (active) {
+                if (value !== 0) {
+                    apply();
+                    lastValues[key] = value;
+                }
+                return;
+            }
+            if (value !== 0) {
+                hasSeenPosition = true;
+                if (pendingZeros[key]) delete pendingZeros[key];
+                delete zeroControls[key];
+                if (Object.keys(zeroControls).length === 0 && settleTimer) {
+                    engine.stopTimer(settleTimer);
+                    settleTimer = 0;
+                }
+                apply();
+                lastValues[key] = value;
+                return;
+            }
+
+            if (!hasSeenPosition) {
+                apply();
+                lastValues[key] = value;
+                return;
+            }
+            zeroControls[key] = true;
+            if (!(Object.prototype.hasOwnProperty.call(lastValues, key) && lastValues[key] === 0)) {
+                pendingZeros[key] = apply;
+            }
+            if (Object.keys(zeroControls).length >= 8) {
+                if (settleTimer) engine.stopTimer(settleTimer);
+                settleTimer = 0;
+                pendingZeros = {};
+                zeroControls = {};
+                active = true;
+                burstTimer = engine.beginTimer(100, finishBurst, true);
+            } else if (!settleTimer) {
+                settleTimer = engine.beginTimer(50, flushZeros, true);
+            }
+        },
+        isActive: function () { return active; }
+    };
+})();
+
+NumarkNS6.guardAnalogInput = function (key, value, apply) {
+    NumarkNS6.reconnectBurst.handle(key, value, apply);
+};
+
 NumarkNS6.makeVolumeFader = function (channel) {
     var state = {
         msb: 0, lsb: 0, initialized: false, pendingTopMSB: null,
@@ -417,6 +492,13 @@ NumarkNS6.filteredPot14Bit = function (options) {
         components.Pot.prototype.inputMSB.call(this, ch, ctrl, value, status, group);
     };
     return pot;
+};
+
+NumarkNS6.masterGain = function (ch, ctrl, value) {
+    NumarkNS6.guardAnalogInput("masterGain", value, function () { engine.setParameter("[Master]", "gain", value <= 64 ? value / 128.0 : (value - 1) / 126.0); });
+};
+NumarkNS6.headGain = function (ch, ctrl, value) {
+    NumarkNS6.guardAnalogInput("headGain", value, function () { engine.setParameter("[Master]", "headGain", value <= 64 ? value / 128.0 : (value - 1) / 126.0); });
 };
 
 // The NS6 X-Fader knob is the crossfader-slope control, separate from the

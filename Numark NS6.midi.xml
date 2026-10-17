@@ -2614,16 +2614,18 @@
       </control>
       <control>
         <group>[Master]</group>
-        <key>gain</key>
+        <key>NumarkNS6.masterGain</key>
         <status>0xB0</status>
         <midino>0x43</midino>
+        <options><script-binding/></options>
         <description>NS6 MASTER knob: CC 67 controls Mixxx Master volume</description>
       </control>
       <control>
         <group>[Master]</group>
-        <key>headGain</key>
+        <key>NumarkNS6.headGain</key>
         <status>0xB0</status>
         <midino>0x42</midino>
+        <options><script-binding/></options>
         <description>NS6 headphone level knob: CC 66 controls Mixxx headphone volume</description>
       </control>
       <control>
