@@ -2630,18 +2630,18 @@
       </control>
       <control>
         <group>[Master]</group>
-        <key>headMix</key>
+        <key>NumarkNS6.headMixMSB</key>
         <status>0xB0</status>
         <midino>0x12</midino>
-        <options><fourteen-bit-msb/></options>
+        <options><script-binding /></options>
         <description>NS6 headphone CUE/MIX knob: CC 18 MSB</description>
       </control>
       <control>
         <group>[Master]</group>
-        <key>headMix</key>
+        <key>NumarkNS6.headMixLSB</key>
         <status>0xB0</status>
         <midino>0x32</midino>
-        <options><fourteen-bit-lsb/></options>
+        <options><script-binding /></options>
         <description>NS6 headphone CUE/MIX knob: CC 50 LSB</description>
       </control>
       <control>

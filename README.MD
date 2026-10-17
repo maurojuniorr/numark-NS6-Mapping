@@ -18,6 +18,7 @@ Desenvolvido e testado com uma Numark NS6 original e Mixxx. Algumas funções de
 - Faders de volume dos canais usam os valores MIDI de 14 bits (MSB/LSB), com tratamento das extremidades para chegar ao mínimo e ao máximo sem retorno indevido.
 - O crossfader físico permanece como controle separado de 14 bits. O knob **X-Fader** da NS6 ajusta a curva do crossfader no Mixxx.
 - Knobs de volume Master, volume dos fones e CUE/MIX dos fones são mapeados separadamente. CUE/MIX usa o par CC de 14 bits.
+- Master e volume dos fones percorrem toda a escala do Mixxx; ao iniciar ou reconectar, o mapping ignora o burst transitório de zeros antes de aplicar as posições reais dos controles, evitando saltos para o mínimo.
 - O switch físico Split Cue envia Note On/Off no canal 1, nota 0; o mapping espelha esse estado no Mixxx. O knob CUE/MIX continua controlando a mistura de pré-escuta e master.
 - Os switches Fader Start esquerdo e direito também seguem o estado Note On/Off da NS6, sem exigir um segundo aperto para desligar.
 

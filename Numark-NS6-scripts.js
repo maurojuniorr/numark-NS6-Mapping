@@ -367,7 +367,8 @@ NumarkNS6.guardAnalogInput = function (key, value, apply) {
 NumarkNS6.makeVolumeFader = function (channel) {
     var state = {
         msb: 0, lsb: 0, initialized: false, pendingTopMSB: null,
-        topLatched: false, pendingTopDropMSB: null, topDropTimer: 0
+        topLatched: false, pendingTopDropMSB: null, topDropTimer: 0,
+        startupMSB: null, startupLSB: null, startupTimer: 0
     };
     function clearPendingTopDrop() {
         if (state.topDropTimer) engine.stopTimer(state.topDropTimer);
@@ -386,8 +387,41 @@ NumarkNS6.makeVolumeFader = function (channel) {
         state.pendingTopDropMSB = null;
         write();
     }
-    return {
+    function commitStartupPosition() {
+        state.startupTimer = 0;
+        clearPendingTopDrop();
+        state.pendingTopMSB = null;
+        state.msb = state.startupMSB === null ? 0 : state.startupMSB;
+        state.lsb = state.startupLSB === null ? 0 : state.startupLSB;
+        state.startupMSB = null;
+        state.startupLSB = null;
+        state.initialized = true;
+        state.topLatched = state.msb === 127;
+        write();
+    }
+    function stageStartupPosition() {
+        if (state.startupTimer) engine.stopTimer(state.startupTimer);
+        state.startupTimer = engine.beginTimer(50, commitStartupPosition, true);
+    }
+    var fader = {
         inputMSB: function (ch, ctrl, value) {
+            // The controller emits a zeroed control-state burst before its
+            // real positions after a USB restart; hold that snapshot briefly.
+            if (state.startupTimer) {
+                state.startupMSB = value;
+                return;
+            }
+            if (!state.initialized) {
+                state.startupMSB = value;
+                stageStartupPosition();
+                return;
+            }
+            if (value === 0) {
+                state.startupMSB = 0;
+                state.startupLSB = 0;
+                stageStartupPosition();
+                return;
+            }
             // A single 124..127 packet can be electrical noise, but outright
             // rejecting it also loses a legitimate fast move to the top stop.
             // Confirm the endpoint with the next nearby high MSB packet. While
@@ -444,10 +478,28 @@ NumarkNS6.makeVolumeFader = function (channel) {
             write();
         },
         inputLSB: function (ch, ctrl, value) {
+            if (state.startupTimer || !state.initialized) {
+                state.startupLSB = value;
+                stageStartupPosition();
+                return;
+            }
             state.lsb = value;
             if (state.initialized) write();
-        }
+        },
+        cancelStartupTimer: function () {
+            if (state.startupTimer) engine.stopTimer(state.startupTimer);
+            state.startupTimer = 0;
+        },
     };
+    var inputMSB = fader.inputMSB;
+    var inputLSB = fader.inputLSB;
+    fader.inputMSB = function (ch, ctrl, value) {
+        NumarkNS6.guardAnalogInput("volume:" + channel + ":msb", value, function () { inputMSB(ch, ctrl, value); });
+    };
+    fader.inputLSB = function (ch, ctrl, value) {
+        NumarkNS6.guardAnalogInput("volume:" + channel + ":lsb", value, function () { inputLSB(ch, ctrl, value); });
+    };
+    return fader;
 };
 for (var volumeChannel = 1; volumeChannel <= 4; volumeChannel++) {
     NumarkNS6["deck" + volumeChannel + "Volume"] = NumarkNS6.makeVolumeFader(volumeChannel);
@@ -458,7 +510,8 @@ for (var volumeChannel = 1; volumeChannel <= 4; volumeChannel++) {
 // Os faders e knobs da NS6 são 14-bit. Alguns enviam picos isolados perto
 // de 127; o filtro preserva movimentos normais e descarta apenas esses saltos.
 NumarkNS6.filtered14Bit = function (group, key, transform) {
-    return {
+    var id = "14bit:" + group + ":" + key;
+    var control = {
         msb: 0, lsb: 0, initialized: false,
         write: function () {
             var value = ((this.msb << 7) | this.lsb) / 16383.0;
@@ -476,6 +529,15 @@ NumarkNS6.filtered14Bit = function (group, key, transform) {
             if (this.initialized) this.write();
         }
     };
+    var inputMSB = control.inputMSB;
+    var inputLSB = control.inputLSB;
+    control.inputMSB = function (ch, ctrl, value) {
+        NumarkNS6.guardAnalogInput(id + ":msb", value, function () { inputMSB.call(control, ch, ctrl, value); });
+    };
+    control.inputLSB = function (ch, ctrl, value) {
+        NumarkNS6.guardAnalogInput(id + ":lsb", value, function () { inputLSB.call(control, ch, ctrl, value); });
+    };
+    return control;
 };
 
 // Os knobs de gain também emitem ocasionalmente MSB 0x7D. components.Pot
@@ -483,17 +545,139 @@ NumarkNS6.filtered14Bit = function (group, key, transform) {
 // Filtramos o byte antes de delegar o restante ao componente nativo do Mixxx.
 NumarkNS6.filteredPot14Bit = function (options) {
     var pot = new components.Pot(options);
+    var id = "filtered-pot:" + options.midi[0] + ":" + options.midi[1];
+    var inputMSB = pot.inputMSB;
+    var inputLSB = pot.inputLSB;
     pot.inputMSB = function (ch, ctrl, value, status, group) {
-        // Na inicialização, prefira esperar uma leitura normal a aceitar um
-        // 0x7D/0x7F isolado como se o knob estivesse no topo.
-        if (this.MSB === undefined && value >= 124) return;
-        if (this.MSB !== undefined && value >= 124 && this.MSB <= 110) return;
-        if (this.MSB !== undefined && Math.abs(value - this.MSB) > 32) return;
-        components.Pot.prototype.inputMSB.call(this, ch, ctrl, value, status, group);
+        NumarkNS6.guardAnalogInput(id + ":msb", value, function () {
+            // Ignore isolated high-byte spikes instead of jumping the gain.
+            if (pot.MSB === undefined && value >= 124) return;
+            if (pot.MSB !== undefined && value >= 124 && pot.MSB <= 110) return;
+            if (pot.MSB !== undefined && Math.abs(value - pot.MSB) > 32) return;
+            inputMSB.call(pot, ch, ctrl, value, status, group);
+        });
+    };
+    pot.inputLSB = function (ch, ctrl, value, status, group) {
+        NumarkNS6.guardAnalogInput(id + ":lsb", value, function () {
+            inputLSB.call(pot, ch, ctrl, value, status, group);
+        });
     };
     return pot;
 };
 
+// Hold each pitch fader's zero preamble until its restored physical position arrives.
+NumarkNS6.protectPotStartupState = function (pot) {
+    var inputMSB = pot.inputMSB, inputLSB = pot.inputLSB;
+    var state = { initialized: false, msbArgs: null, lsbArgs: null, lastLSBArgs: null, timer: 0 };
+    function commit() {
+        state.timer = 0;
+        if (state.msbArgs) inputMSB.apply(pot, state.msbArgs);
+        if (state.lsbArgs) {
+            inputLSB.apply(pot, state.lsbArgs);
+            state.lastLSBArgs = state.lsbArgs;
+        }
+        state.msbArgs = null;
+        state.lsbArgs = null;
+        state.initialized = true;
+    }
+    function stage() {
+        if (state.timer) engine.stopTimer(state.timer);
+        state.timer = engine.beginTimer(50, commit, true);
+    }
+    pot.inputMSB = function () {
+        var args = Array.prototype.slice.call(arguments);
+        if (!state.initialized || state.timer || args[2] === 0) {
+            if (state.initialized && !state.timer && args[2] === 0) {
+                state.lsbArgs = state.lastLSBArgs ? state.lastLSBArgs.slice() : args.slice();
+                if (!state.lastLSBArgs) state.lsbArgs[1] += 0x20;
+                state.lsbArgs[2] = 0;
+            }
+            state.msbArgs = args;
+            stage();
+            return;
+        }
+        state.initialized = true;
+        return inputMSB.apply(pot, args);
+    };
+    pot.inputLSB = function () {
+        var args = Array.prototype.slice.call(arguments);
+        if (!state.initialized || state.timer) {
+            state.lsbArgs = args;
+            stage();
+            return;
+        }
+        state.lastLSBArgs = args;
+        return inputLSB.apply(pot, args);
+    };
+    pot.cancelStartupTimer = function () {
+        if (state.timer) engine.stopTimer(state.timer);
+        state.timer = 0;
+    };
+    var startupInputMSB = pot.inputMSB;
+    var startupInputLSB = pot.inputLSB;
+    pot.inputMSB = function () {
+        var args = Array.prototype.slice.call(arguments);
+        NumarkNS6.guardAnalogInput("pitch:" + args[0] + ":" + args[1], args[2], function () {
+            startupInputMSB.apply(pot, args);
+        });
+    };
+    pot.inputLSB = function () {
+        var args = Array.prototype.slice.call(arguments);
+        NumarkNS6.guardAnalogInput("pitch:" + args[0] + ":" + args[1], args[2], function () {
+            startupInputLSB.apply(pot, args);
+        });
+    };
+    return pot;
+};
+
+NumarkNS6.headMixPosition = (function () {
+    var msb = 0, lsb = 0, initialized = false, pendingMSB = null, pendingLSB = null, timer = 0;
+    function write() { engine.setValue("[Master]", "headMix", ((msb << 7) | lsb) / 16383.0); }
+    function commit() {
+        timer = 0;
+        msb = pendingMSB === null ? 0 : pendingMSB;
+        lsb = pendingLSB === null ? 0 : pendingLSB;
+        pendingMSB = null;
+        pendingLSB = null;
+        initialized = true;
+        write();
+    }
+    function stage() {
+        if (timer) engine.stopTimer(timer);
+        timer = engine.beginTimer(50, commit, true);
+    }
+    return {
+        inputMSB: function (ch, ctrl, value) {
+            if (!initialized || timer || value === 0) {
+                if (initialized && !timer && value === 0) pendingLSB = 0;
+                pendingMSB = value;
+                stage();
+                return;
+            }
+            msb = value;
+            write();
+        },
+        inputLSB: function (ch, ctrl, value) {
+            if (!initialized || timer) {
+                pendingLSB = value;
+                stage();
+                return;
+            }
+            lsb = value;
+            write();
+        },
+        cancelStartupTimer: function () {
+            if (timer) engine.stopTimer(timer);
+            timer = 0;
+        }
+    };
+})();
+NumarkNS6.headMixMSB = function (ch, ctrl, value) {
+    NumarkNS6.guardAnalogInput("headMix:msb", value, function () { NumarkNS6.headMixPosition.inputMSB(ch, ctrl, value); });
+};
+NumarkNS6.headMixLSB = function (ch, ctrl, value) {
+    NumarkNS6.guardAnalogInput("headMix:lsb", value, function () { NumarkNS6.headMixPosition.inputLSB(ch, ctrl, value); });
+};
 NumarkNS6.masterGain = function (ch, ctrl, value) {
     NumarkNS6.guardAnalogInput("masterGain", value, function () { engine.setParameter("[Master]", "gain", value <= 64 ? value / 128.0 : (value - 1) / 126.0); });
 };
@@ -518,6 +702,11 @@ NumarkNS6.xFaderCurveForMidiValue = function (value) {
     return 20.0 * Math.pow(50.0, (normalized - 0.97) / 0.03);
 };
 NumarkNS6.setXfaderCurve = function (channel, control, value) {
+    NumarkNS6.guardAnalogInput("xfaderCurve", value, function () {
+        NumarkNS6.applyXfaderCurve(value);
+    });
+};
+NumarkNS6.applyXfaderCurve = function (value) {
     var curve = NumarkNS6.xFaderCurveForMidiValue(value);
     // Mixxx applies this slope in constant-power mode. If the contour button
     // currently holds the scratch preset, update the normal profile without
@@ -756,6 +945,14 @@ NumarkNS6.SysExInit2 = [0xF0, 0x00, 0x01, 0x3F, 0x7F, 0x79, 0x60, 0x00, 0x01, 0x
 
 NumarkNS6.init = function () {
     NumarkNS6.isBooting = true; // Escudo Levantado!
+
+    // Let the macOS driver know that a MIDI application remains connected.
+    NumarkNS6.midiLeaseHeartbeat = [0xF0, 0x7D, 0x4E, 0x53, 0x36, 0x48, 0xF7];
+    midi.sendSysexMsg(NumarkNS6.midiLeaseHeartbeat, NumarkNS6.midiLeaseHeartbeat.length);
+    if (NumarkNS6.midiLeaseTimer) engine.stopTimer(NumarkNS6.midiLeaseTimer);
+    NumarkNS6.midiLeaseTimer = engine.beginTimer(500, function () {
+        midi.sendSysexMsg(NumarkNS6.midiLeaseHeartbeat, NumarkNS6.midiLeaseHeartbeat.length);
+    }, false);
 
     // Ask the NS6 to resend its current physical control state when the Mixxx
     // mapping starts. The system driver separately performs the USB-session
@@ -1554,6 +1751,7 @@ NumarkNS6.Deck = function(channel) {
             this.lastFaderParameter = faderParameter;
         }
     });
+    NumarkNS6.protectPotStartupState(this.bpmSlider);
     
     this.pitchLedHandler = engine.makeConnection(this.group, "rate", function(val) {
         // A centred 14-bit fader does not always produce binary zero (the
@@ -2113,8 +2311,8 @@ NumarkNS6.FX.updateLEDs = function() {
 NumarkNS6.FX.init = function() {
     NumarkNS6.FX.toggleLeft = new components.Button({ midi: [0x90, 0x2D], input: function (ch, ctrl, val) { if (val > 0) { var t = "[EffectRack1_EffectUnit1_Effect" + ((NumarkNS6.Decks[1].shiftButton.state || NumarkNS6.Decks[3].shiftButton.state) ? "2" : "1") + "]"; engine.setValue(t, "enabled", !engine.getValue(t, "enabled")); } } });
     NumarkNS6.FX.toggleRight = new components.Button({ midi: [0x90, 0x2F], input: function (ch, ctrl, val) { if (val > 0) { var t = "[EffectRack1_EffectUnit2_Effect" + ((NumarkNS6.Decks[2].shiftButton.state || NumarkNS6.Decks[4].shiftButton.state) ? "2" : "1") + "]"; engine.setValue(t, "enabled", !engine.getValue(t, "enabled")); } } });
-    NumarkNS6.FX.selectLeft = new components.Button({ midi: [0xB0, 0x56], group: "[EffectRack1_EffectUnit1_Effect1]", input: function(ch, ctrl, val) { var t = "[EffectRack1_EffectUnit1_Effect" + ((NumarkNS6.Decks[1].shiftButton.state || NumarkNS6.Decks[3].shiftButton.state) ? "2" : "1") + "]"; engine.setValue(t, "meta", Math.max(0, Math.min(1, engine.getValue(t, "meta") + ((val === 0x01 || val < 64) ? 0.05 : -0.05)))); } });
-    NumarkNS6.FX.selectRight = new components.Button({ midi: [0xB0, 0x58], group: "[EffectRack1_EffectUnit2_Effect1]", input: function(ch, ctrl, val) { var t = "[EffectRack1_EffectUnit2_Effect" + ((NumarkNS6.Decks[2].shiftButton.state || NumarkNS6.Decks[4].shiftButton.state) ? "2" : "1") + "]"; engine.setValue(t, "meta", Math.max(0, Math.min(1, engine.getValue(t, "meta") + ((val === 0x01 || val < 64) ? 0.05 : -0.05)))); } });
+    NumarkNS6.FX.selectLeft = new components.Button({ midi: [0xB0, 0x56], group: "[EffectRack1_EffectUnit1_Effect1]", input: function(ch, ctrl, val) { if (NumarkNS6.reconnectBurst.isActive()) return; var t = "[EffectRack1_EffectUnit1_Effect" + ((NumarkNS6.Decks[1].shiftButton.state || NumarkNS6.Decks[3].shiftButton.state) ? "2" : "1") + "]"; engine.setValue(t, "meta", Math.max(0, Math.min(1, engine.getValue(t, "meta") + ((val === 0x01 || val < 64) ? 0.05 : -0.05)))); } });
+    NumarkNS6.FX.selectRight = new components.Button({ midi: [0xB0, 0x58], group: "[EffectRack1_EffectUnit2_Effect1]", input: function(ch, ctrl, val) { if (NumarkNS6.reconnectBurst.isActive()) return; var t = "[EffectRack1_EffectUnit2_Effect" + ((NumarkNS6.Decks[2].shiftButton.state || NumarkNS6.Decks[4].shiftButton.state) ? "2" : "1") + "]"; engine.setValue(t, "meta", Math.max(0, Math.min(1, engine.getValue(t, "meta") + ((val === 0x01 || val < 64) ? 0.05 : -0.05)))); } });
     NumarkNS6.FX.encoderLeft = new components.Button({ midi: [0xB0, 0x5A], group: "[EffectRack1_EffectUnit1_Effect1]", input: function(ch, ctrl, val) { var t = "[EffectRack1_EffectUnit1_Effect" + ((NumarkNS6.Decks[1].shiftButton.state || NumarkNS6.Decks[3].shiftButton.state) ? "2" : "1") + "]"; engine.setValue(t, "effect_selector", (val === 0x01 || val < 64) ? 1 : -1); } });
     NumarkNS6.FX.encoderRight = new components.Button({ midi: [0xB0, 0x5B], group: "[EffectRack1_EffectUnit2_Effect1]", input: function(ch, ctrl, val) { var t = "[EffectRack1_EffectUnit2_Effect" + ((NumarkNS6.Decks[2].shiftButton.state || NumarkNS6.Decks[4].shiftButton.state) ? "2" : "1") + "]"; engine.setValue(t, "effect_selector", (val === 0x01 || val < 64) ? 1 : -1); } });
 
@@ -2156,11 +2354,18 @@ NumarkNS6.btnSamplers = function(ch, ctrl, val) { if (val > 0) engine.setValue("
 
 NumarkNS6.shutdown = function () {
     // 1. Mata todos os timers na hora
+    if (NumarkNS6.midiLeaseTimer) engine.stopTimer(NumarkNS6.midiLeaseTimer);
+    NumarkNS6.midiLeaseTimer = 0;
     if (NumarkNS6.displayTimer !== 0) engine.stopTimer(NumarkNS6.displayTimer);
     if (NumarkNS6.navTimer !== 0) engine.stopTimer(NumarkNS6.navTimer);
     if (NumarkNS6.blinkTimer !== 0) engine.stopTimer(NumarkNS6.blinkTimer);
     if (NumarkNS6.animTimer !== 0) engine.stopTimer(NumarkNS6.animTimer);
     if (NumarkNS6.parachuteTimer !== 0) engine.stopTimer(NumarkNS6.parachuteTimer);
+    for (var volumeChannel = 1; volumeChannel <= 4; volumeChannel++) {
+        NumarkNS6["deck" + volumeChannel + "Volume"].cancelStartupTimer();
+        if (NumarkNS6.Decks[volumeChannel]) NumarkNS6.Decks[volumeChannel].bpmSlider.cancelStartupTimer();
+    }
+    NumarkNS6.headMixPosition.cancelStartupTimer();
     // Libera os motores dos pratos e cancela os timers de scrub de cada deck.
     for (var deckNum = 1; deckNum <= 4; deckNum++) {
         var deck = NumarkNS6.Decks[deckNum];
