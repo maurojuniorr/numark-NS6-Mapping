@@ -239,7 +239,7 @@ NumarkNS6.scratchReleaseDelayMs = 60;
 NumarkNS6.scratchPlaybackRecoveryMs = 100;
 // Release fast platter throws into Mixxx's native inertia controller.
 NumarkNS6.backspinReleaseRateThreshold = -2.5;
-NumarkNS6.backspinHandoffQuietMs = 5;
+NumarkNS6.backspinHandoffQuietMs = 0;
 // Mixxx's native scratch inertia starts at this platter speed after a throw.
 NumarkNS6.frontspinReleaseRateThreshold = 2.5;
 NumarkNS6.backspinAccelerationWindowMs = 120;
