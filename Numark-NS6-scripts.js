@@ -690,16 +690,7 @@ NumarkNS6.headGain = function (ch, ctrl, value) {
 // neutral mixing curve, then move progressively toward a sharp cut on the right.
 NumarkNS6.xFaderCurveForMidiValue = function (value) {
     var normalized = Math.max(0, Math.min(127, value)) / 127.0;
-    if (normalized <= 0.5) {
-        return 0.6 + 0.07 * (normalized / 0.5);
-    }
-    if (normalized <= 0.85) {
-        return 0.67 * Math.pow(4.0 / 0.67, (normalized - 0.5) / 0.35);
-    }
-    if (normalized <= 0.97) {
-        return 4.0 * Math.pow(5.0, (normalized - 0.85) / 0.12);
-    }
-    return 20.0 * Math.pow(50.0, (normalized - 0.97) / 0.03);
+    return 1000.0 / ((1.0 - normalized) * 999.0 + 1.0) - 1.0 + 0.6;
 };
 NumarkNS6.setXfaderCurve = function (channel, control, value) {
     NumarkNS6.guardAnalogInput("xfaderCurve", value, function () {
@@ -708,16 +699,14 @@ NumarkNS6.setXfaderCurve = function (channel, control, value) {
 };
 NumarkNS6.applyXfaderCurve = function (value) {
     var curve = NumarkNS6.xFaderCurveForMidiValue(value);
-    // Mixxx applies this slope in constant-power mode. If the contour button
-    // currently holds the scratch preset, update the normal profile without
-    // interrupting that preset; it will be restored when contour is released.
-    NumarkNS6.storedCrossfaderParams.xFaderMode = 1;
+    var calibration = Math.pow(0.5, 1.0 / curve);
     NumarkNS6.storedCrossfaderParams.xFaderCurve = curve;
+    NumarkNS6.storedCrossfaderParams.xFaderCalibration = calibration;
     NumarkNS6.crossfaderChanged = true;
     var scratchContourActive = NumarkNS6.Mixer && NumarkNS6.Mixer.changeCrossfaderContour && NumarkNS6.Mixer.changeCrossfaderContour.state;
     if (!scratchContourActive) {
-        engine.setValue("[Mixer Profile]", "xFaderMode", 1);
         engine.setValue("[Mixer Profile]", "xFaderCurve", curve);
+        engine.setValue("[Mixer Profile]", "xFaderCalibration", calibration);
     }
 };
 // The physical crossfader remains its own 14-bit control on CC 7/39.
