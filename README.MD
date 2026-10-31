@@ -132,7 +132,7 @@ Os controles de deck abaixo se repetem nos quatro decks. Os botões **SHIFT** e 
 
 ## Instalação
 
-1. Baixe `Numark NS6.midi.xml` e `Numark-NS6-scripts.js` deste repositório.
+1. Baixe `Numark NS6.midi.xml` e `Numark-NS6.scripts.js` deste repositório.
 2. Copie os dois arquivos para a pasta de controladores do Mixxx:
    - macOS: `~/Library/Application Support/Mixxx/controllers/`
    - Linux: `~/.mixxx/controllers/`

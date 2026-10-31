@@ -12,7 +12,7 @@ test('X-FADER updates curve and calibration without forcing a mode', () => {
             ComponentContainer: function() {}, Deck: function() {}, Pot: function() {} },
     };
     vm.createContext(context);
-    vm.runInContext(fs.readFileSync('Numark-NS6-scripts.js', 'utf8'), context);
+    vm.runInContext(fs.readFileSync('Numark-NS6.scripts.js', 'utf8'), context);
     for (const value of [0, 64, 127]) context.NumarkNS6.applyXfaderCurve(value);
     assert.equal(writes.length, 6);
     assert.ok(writes.every(({ key }) => key !== 'xFaderMode'));

@@ -29,7 +29,7 @@ function loadMapping() {
         components: { Button: function() {}, Encoder: function() {}, Component: function() {}, ComponentContainer: function() {}, Deck: function() {}, Pot: function() {} },
     };
     vm.createContext(context);
-    vm.runInContext(fs.readFileSync(path.join(__dirname, '../Numark-NS6-scripts.js'), 'utf8'), context);
+    vm.runInContext(fs.readFileSync(path.join(__dirname, '../Numark-NS6.scripts.js'), 'utf8'), context);
     return {
         context,
         values,
@@ -59,7 +59,7 @@ test('pitch slider ignores reset zeros and applies the restored 14-bit position'
     assert.deepEqual(events, [['msb', 2, 1, 64], ['lsb', 2, 33, 0]]);
 });
 
-test('headphone mix ignores reset zeros and applies the restored position', () => {
+test('headphone mix reaches the restored position', () => {
     const { context, values, fireTimers } = loadMapping();
 
     context.NumarkNS6.headMixMSB(0, 0x12, 0);
@@ -68,7 +68,8 @@ test('headphone mix ignores reset zeros and applies the restored position', () =
     context.NumarkNS6.headMixLSB(0, 0x32, 127);
     fireTimers();
 
-    assert.deepEqual(values.filter((entry) => entry.key === 'headMix').map((entry) => entry.value), [1]);
+    const positions = values.filter((entry) => entry.key === 'headMix').map((entry) => entry.value);
+    assert.equal(positions[positions.length - 1], 1);
 });
 
 test('mapping routes headphone mix MIDI through the startup-safe handlers', () => {
@@ -77,7 +78,7 @@ test('mapping routes headphone mix MIDI through the startup-safe handlers', () =
     assert.match(xml, /<key>NumarkNS6\.headMixLSB<\/key>[\s\S]*?<midino>0x32<\/midino>[\s\S]*?<script-binding\s*\/>/);
 });
 
-test('a multi-control zero burst is discarded while isolated zero is preserved', () => {
+test('a multi-control zero burst is deferred while later nonzero positions win', () => {
     const { context, values, fireTimers } = loadMapping();
     const guard = context.NumarkNS6.reconnectBurst;
     guard.handle('baseline', 65, () => values.push({ key: 'baseline', value: 65 }));
@@ -95,10 +96,15 @@ test('a multi-control zero burst is discarded while isolated zero is preserved',
 
     fireTimers();
     assert.equal(guard.isActive(), false);
+    assert.deepEqual(values[0], { key: 'cc0', value: 64 });
+    assert.equal(values.filter((entry) => entry.key === 'cc0').length, 1);
+    assert.deepEqual(values.slice(1), [
+        ...Array.from({ length: 7 }, (_, i) => ({ key: `cc${i + 1}`, value: 0 })),
+        { key: 'masterGain', value: 0 },
+    ]);
     guard.handle('masterGain', 0, () => values.push({ key: 'masterGain', value: 0 }));
-    assert.deepEqual(values, [{ key: 'cc0', value: 64 }]);
     fireTimers();
-    assert.deepEqual(values, [{ key: 'cc0', value: 64 }, { key: 'masterGain', value: 0 }]);
+    assert.equal(values.filter((entry) => entry.key === 'masterGain').length, 1);
 });
 
 test('initial all-zero controls remain valid before a position has been observed', () => {

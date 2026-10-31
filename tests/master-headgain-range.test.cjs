@@ -26,7 +26,7 @@ function loadMapping() {
         },
     };
     vm.createContext(context);
-    vm.runInContext(fs.readFileSync(path.join(__dirname, '../Numark-NS6-scripts.js'), 'utf8'), context);
+    vm.runInContext(fs.readFileSync(path.join(__dirname, '../Numark-NS6.scripts.js'), 'utf8'), context);
     return { context, parameters };
 }
 

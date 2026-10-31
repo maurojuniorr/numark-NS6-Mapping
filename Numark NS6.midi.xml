@@ -4,6 +4,7 @@
       <name>Numark NS6</name>
       <author>maurojuniorr</author>
       <description>4 channel MIDI Mapping for Numark NS6</description>
+      <forums>https://mixxx.discourse.group/t/numark-ns6-mapping/31035</forums>
       <manual>numark_ns6</manual>
   </info>
   <settings>
@@ -34,7 +35,7 @@
         precision="0"
         label="Scratch Sensitivity">
         <description>
-          Adjusts how much the track moves while touching the jog wheel or scrubbing a stopped deck. 50% matches the current djay-like response. Lower values require more platter rotation; higher values are more responsive. Fast forward and backward throws follow the jog after release. During playback they return to normal speed; while paused they slow to zero without starting the deck.
+          Adjusts how much the track moves while touching the jog wheel or scrubbing a stopped deck. 50% matches the current djay-like response. Lower values require more platter rotation; higher values are more responsive.
         </description>
       </option>
     </group>
@@ -44,7 +45,7 @@
       <file filename="common-controller-scripts.js"/>
       <file filename="lodash.mixxx.js"/>
       <file filename="midi-components-0.0.js"/>
-      <file functionprefix="NumarkNS6" filename="Numark-NS6-scripts.js"/>
+      <file functionprefix="NumarkNS6" filename="Numark-NS6.scripts.js"/>
     </scriptfiles>
     <init-function>NumarkNS6.init</init-function>
     <shutdown-function>NumarkNS6.shutdown</shutdown-function>
@@ -77,7 +78,7 @@
             <midino>0x02</midino>
             <options><script-binding/></options>
         </control>
-    
+
       <control>
         <group>[Channel1]</group>
         <key>NumarkNS6.Decks[1].gridSetClearInput</key>
@@ -115,7 +116,7 @@
         <status>0x81</status><midino>0x20</midino>
         <options><script-binding /></options>
       </control>
-      
+
       <control>
         <group>[Channel2]</group>
         <key>NumarkNS6.Decks[2].gridSlipAdjustInput</key>
@@ -443,7 +444,7 @@
         <midino>0x26</midino>
         <options><script-binding /></options>
       </control>
-    
+
   <control>
     <group>[Channel1]</group>
     <key>NumarkNS6.loopOnOffInput</key>
@@ -772,7 +773,7 @@
 
 
 
- 
+
 
       <control>
           <group>[Channel1]</group>
@@ -825,13 +826,20 @@
           <status>0x84</status> <midino>0x1C</midino>
           <options><Script-Binding/></options>
       </control>
-    
+
 
       <!-- nav encoder -->
 
       <control>
           <group>[Skin]</group>
-          <key>NumarkNS6.toggleEffects</key> 
+          <key>show_samplers</key>
+          <description>Toggle Samplers Container</description>
+          <status>0x90</status>
+          <midino>0x2E</midino>
+      </control>
+      <control>
+          <group>[Skin]</group>
+          <key>NumarkNS6.toggleEffects</key>
           <description>Toggle Effects Container</description>
           <status>0x90</status>
           <midino>0x30</midino>
@@ -934,7 +942,7 @@
           <script-binding/>
         </options>
       </control>
-      
+
       <control>
         <group>[EffectRack1_EffectUnit2]</group>
         <key>NumarkNS6.FX.Assign.btn_2_Channel3.input</key>
@@ -1017,14 +1025,14 @@
         <status>0x90</status><midino>0x0B</midino>
         <options><script-binding/></options>
       </control>
-      
+
       <control>
         <group>[Skin]</group>
         <key>NumarkNS6.Mixer.prepareButton.input</key>
         <status>0x90</status><midino>0x09</midino>
         <options><script-binding/></options>
       </control>
-      
+
       <control>
         <group>[Skin]</group>
         <key>NumarkNS6.Mixer.filesButton.input</key>
@@ -1499,7 +1507,7 @@
         <midino>0x21</midino>
         <options><script-binding /></options>
       </control>
-      
+
       <control>
         <group>[Channel2]</group>
         <key>NumarkNS6.scratchButtonInput</key>
@@ -1531,7 +1539,7 @@
         <midino>0x21</midino>
         <options><script-binding /></options>
       </control>
-      
+
       <control>
         <group>[Channel2]</group>
         <key>NumarkNS6.scratchButtonInput</key>
@@ -1555,18 +1563,8 @@
         <midino>0x21</midino>
         <options><script-binding /></options>
       </control>
-     
 
-      <control>
-        <group>[Master]</group>
-        <key>NumarkNS6.Mixer.pflVuMeter</key>
-        <status>0xB0</status>
-        <midino>0x5C</midino>
-        <options>
-          <script-binding />
-        </options>
-      </control>
-      
+
       <control>
         <group>[Channel1]</group>
         <key>NumarkNS6.Decks[1].loadButton.input</key>
@@ -1739,7 +1737,7 @@
           <script-binding />
         </options>
       </control>
-     
+
       <control>
         <group>[Mixer Profile]</group>
         <key>NumarkNS6.Mixer.changeCrossfaderContour.input</key>
@@ -2301,7 +2299,7 @@
         <group>[Channel4]</group>
         <key>NumarkNS6.jogMove14bit</key>
         <status>0xB4</status>
-        <midino>0x00</midino> 
+        <midino>0x00</midino>
         <options>
         <script-binding />
         </options>
@@ -2317,7 +2315,7 @@
       </control>
 
 
-    
+
 
       <control>
         <group>[Channel1]</group>
@@ -2555,17 +2553,8 @@
       <!-- Faders -->
       <control>
           <group>[Master]</group>
-          <key>NumarkNS6.setFaderStartLeft</key>
+          <key>NumarkNS6.toggleFaderStartLeft</key>
           <status>0x90</status>
-          <midino>0x02</midino>
-          <options>
-              <script-binding/>
-          </options>
-      </control>
-      <control>
-          <group>[Master]</group>
-          <key>NumarkNS6.setFaderStartLeft</key>
-          <status>0x80</status>
           <midino>0x02</midino>
           <options>
               <script-binding/>
@@ -2574,17 +2563,8 @@
 
       <control>
           <group>[Master]</group>
-          <key>NumarkNS6.setFaderStartRight</key>
+          <key>NumarkNS6.toggleFaderStartRight</key>
           <status>0x90</status>
-          <midino>0x03</midino>
-          <options>
-              <script-binding/>
-          </options>
-      </control>
-      <control>
-          <group>[Master]</group>
-          <key>NumarkNS6.setFaderStartRight</key>
-          <status>0x80</status>
           <midino>0x03</midino>
           <options>
               <script-binding/>
@@ -2619,21 +2599,19 @@
         <midino>0x43</midino>
         <options><script-binding/></options>
         <description>NS6 MASTER knob: CC 67 controls Mixxx Master volume</description>
-      </control>
-      <control>
+      </control>      <control>
         <group>[Master]</group>
         <key>NumarkNS6.headGain</key>
         <status>0xB0</status>
         <midino>0x42</midino>
         <options><script-binding/></options>
         <description>NS6 headphone level knob: CC 66 controls Mixxx headphone volume</description>
-      </control>
-      <control>
+      </control>      <control>
         <group>[Master]</group>
         <key>NumarkNS6.headMixMSB</key>
         <status>0xB0</status>
         <midino>0x12</midino>
-        <options><script-binding /></options>
+        <options><script-binding/></options>
         <description>NS6 headphone CUE/MIX knob: CC 18 MSB</description>
       </control>
       <control>
@@ -2641,9 +2619,10 @@
         <key>NumarkNS6.headMixLSB</key>
         <status>0xB0</status>
         <midino>0x32</midino>
-        <options><script-binding /></options>
+        <options><script-binding/></options>
         <description>NS6 headphone CUE/MIX knob: CC 50 LSB</description>
       </control>
+
       <control>
         <group>[Master]</group>
         <key>NumarkNS6.Mixer.splitCueSwitch.input</key>
@@ -3122,6 +3101,6 @@
         </options>
       </control>
     </controls>
-  
+
   </controller>
 </MixxxControllerPreset>

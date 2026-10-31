@@ -26,7 +26,7 @@ function loadMapping() {
         components: { Button: function() {}, Encoder: function() {}, Component: function() {}, ComponentContainer: function() {}, Deck: function() {} },
     };
     vm.createContext(context);
-    vm.runInContext(fs.readFileSync(path.join(__dirname, '../Numark-NS6-scripts.js'), 'utf8'), context);
+    vm.runInContext(fs.readFileSync(path.join(__dirname, '../Numark-NS6.scripts.js'), 'utf8'), context);
     return {
         context,
         values,

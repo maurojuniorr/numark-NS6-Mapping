@@ -38,7 +38,7 @@ function setup() {
         components: { Encoder: function() {}, Component: function() {}, ComponentContainer: function() {}, Deck: function() {} },
     };
     vm.createContext(context);
-    vm.runInContext(fs.readFileSync(path.join(__dirname, '../Numark-NS6-scripts.js'), 'utf8'), context);
+    vm.runInContext(fs.readFileSync(path.join(__dirname, '../Numark-NS6.scripts.js'), 'utf8'), context);
 
     const mapping = context.NumarkNS6;
     mapping.Decks[1] = { scratchMode: true };
@@ -49,7 +49,7 @@ function setup() {
     return { mapping, timers, timerDelays, scratching, ticks, disableCalls, playWrites, jogWrites, move, setScratchRate(value) { scratchRate = value; }, setPlaying(value) { playing = value; } };
 }
 
-test('playing backspin follows the reverse platter tail before ramping to playback', () => {
+test('playing backspin follows the reverse platter tail before handoff', () => {
     const s = setup();
     s.setPlaying(1);
     s.mapping.jogTouch14bit(1, 0, 127, 0, '[Channel1]');
@@ -66,9 +66,9 @@ test('playing backspin follows the reverse platter tail before ramping to playba
     assert.deepEqual(s.ticks, [[1, -5], [1, -5]]);
 
     const handoffTimer = s.mapping.Decks[1].scratchReleaseTimer;
-    assert.equal(s.timerDelays.get(handoffTimer), 0);
+    assert.equal(s.timerDelays.get(handoffTimer), s.mapping.spinCandidateQuietMs);
     s.timers.get(handoffTimer)();
-    assert.deepEqual(s.disableCalls, [[1, true]]);
+    assert.deepEqual(s.disableCalls, [[1, false]]);
     assert.equal(s.scratching.has(1), false);
 });
 
@@ -87,7 +87,7 @@ test('paused reverse throw follows real platter tail and stops without starting 
 
     const handoffTimer = s.mapping.Decks[1].scratchReleaseTimer;
     s.timers.get(handoffTimer)();
-    assert.deepEqual(s.disableCalls, [[1, true]]);
+    assert.deepEqual(s.disableCalls, [[1, false]]);
     assert.deepEqual(s.playWrites, []);
     assert.equal(s.scratching.has(1), false);
 });
@@ -107,7 +107,7 @@ test('paused forward throw follows real platter tail and stops without starting 
 
     const handoffTimer = s.mapping.Decks[1].scratchReleaseTimer;
     s.timers.get(handoffTimer)();
-    assert.deepEqual(s.disableCalls, [[1, true]]);
+    assert.deepEqual(s.disableCalls, [[1, false]]);
     assert.deepEqual(s.playWrites, []);
     assert.equal(s.scratching.has(1), false);
 });
